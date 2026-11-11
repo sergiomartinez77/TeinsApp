@@ -1,4 +1,9 @@
-import { FINISHED_STATUSES, UNSYNCED_STATUSES } from '@/models/visit.model';
+import {
+  FINISHED_STATUSES,
+  UNSYNCED_STATUSES,
+  VISIT_TYPE_LABELS,
+  VISIT_TYPES,
+} from '@/models/visit.model';
 
 /**
  * Consultas SQL de lectura de visitas.
@@ -9,6 +14,8 @@ const inList = (values: readonly string[]) => values.map((value) => `'${value}'`
 
 const FINISHED = inList(FINISHED_STATUSES);
 const UNSYNCED = inList(UNSYNCED_STATUSES);
+
+// ── Dashboard ────────────────────────────────────────────────────────────────
 
 /** Conteos para el dashboard, en una sola pasada por la tabla. */
 export const VISIT_STATS_SQL = `
@@ -57,3 +64,87 @@ export function visitStatsFromRow(row: Partial<VisitStatsRow> | undefined): Visi
     pendingSync: Number(row.pending_sync ?? 0),
   };
 }
+
+// ── Listado ──────────────────────────────────────────────────────────────────
+
+/** Pestañas del listado de visitas. */
+export type VisitFilter = 'all' | 'inProgress' | 'assigned' | 'completed';
+
+export const VISIT_FILTERS: readonly { key: VisitFilter; label: string }[] = [
+  { key: 'all', label: 'Todas' },
+  { key: 'inProgress', label: 'En progreso' },
+  { key: 'assigned', label: 'Asignadas' },
+  { key: 'completed', label: 'Completadas' },
+];
+
+const FILTER_CONDITIONS: Readonly<Record<VisitFilter, string | null>> = {
+  all: null,
+  inProgress: "status = 'inProgress'",
+  assigned: "status = 'assigned'",
+  completed: `status IN (${FINISHED})`,
+};
+
+/** Escapa los comodines de LIKE para buscar el texto tal cual lo escribió el usuario. */
+export function escapeLike(text: string): string {
+  return text.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+/**
+ * Tipos de visita cuyo nombre visible contiene el texto buscado.
+ * Permite encontrar "Inspección de Energía" aunque en la base el tipo sea `energia`.
+ */
+export function visitTypesMatching(search: string): string[] {
+  const needle = search.toLocaleLowerCase('es');
+  return VISIT_TYPES.filter((type) =>
+    VISIT_TYPE_LABELS[type].toLocaleLowerCase('es').includes(needle),
+  );
+}
+
+export interface VisitListOptions {
+  filter: VisitFilter;
+  search: string;
+  /** Máximo de filas a devolver. */
+  limit: number;
+}
+
+export interface SqlQuery {
+  sql: string;
+  parameters: (string | number)[];
+}
+
+/**
+ * Consulta del listado: por técnico, con pestaña, búsqueda de texto libre
+ * (título, cliente, dirección y tipo) y límite para paginar.
+ */
+export function buildVisitListQuery(technicianId: string, options: VisitListOptions): SqlQuery {
+  const conditions = ['technician_id = ?'];
+  const parameters: (string | number)[] = [technicianId];
+
+  const filterCondition = FILTER_CONDITIONS[options.filter];
+  if (filterCondition) conditions.push(filterCondition);
+
+  const search = options.search.trim();
+  if (search) {
+    const pattern = `%${escapeLike(search)}%`;
+    const textMatches = ['title', 'client_name', 'address', 'visit_type'].map(
+      (column) => `${column} LIKE ? ESCAPE '\\'`,
+    );
+    parameters.push(pattern, pattern, pattern, pattern);
+
+    const types = visitTypesMatching(search);
+    if (types.length > 0) {
+      textMatches.push(`visit_type IN (${types.map(() => '?').join(', ')})`);
+      parameters.push(...types);
+    }
+    conditions.push(`(${textMatches.join(' OR ')})`);
+  }
+
+  parameters.push(options.limit);
+  return {
+    sql: `SELECT * FROM visits WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC LIMIT ?`,
+    parameters,
+  };
+}
+
+/** Una visita por id. Incluye el técnico para no exponer visitas ajenas. */
+export const VISIT_BY_ID_SQL = 'SELECT * FROM visits WHERE id = ? AND technician_id = ? LIMIT 1';

@@ -8,7 +8,10 @@ export {
   ConnectivityBanner,
   type ConnectivityBannerProps,
 } from './ConnectivityBanner';
+export { Dialog, type DialogProps } from './Dialog';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
+export { Fab, type FabProps } from './Fab';
+export { Select, type SelectOption, type SelectProps } from './Select';
 export { ErrorScreen, type ErrorScreenProps } from './ErrorScreen';
 export { Icon, type IconName, type IconProps } from './Icon';
 export { IconButton, type IconButtonProps } from './IconButton';
