@@ -4,6 +4,10 @@ import {
   VISIT_TYPE_LABELS,
   VISIT_TYPES,
 } from '@/models/visit.model';
+import { escapeLike, type SqlQuery } from '@/utils/sql.utils';
+
+// Se reexportan para no romper a quien ya las importaba desde aquí.
+export { escapeLike, type SqlQuery };
 
 /**
  * Consultas SQL de lectura de visitas.
@@ -84,11 +88,6 @@ const FILTER_CONDITIONS: Readonly<Record<VisitFilter, string | null>> = {
   completed: `status IN (${FINISHED})`,
 };
 
-/** Escapa los comodines de LIKE para buscar el texto tal cual lo escribió el usuario. */
-export function escapeLike(text: string): string {
-  return text.replace(/[\\%_]/g, (match) => `\\${match}`);
-}
-
 /**
  * Tipos de visita cuyo nombre visible contiene el texto buscado.
  * Permite encontrar "Inspección de Energía" aunque en la base el tipo sea `energia`.
@@ -105,11 +104,6 @@ export interface VisitListOptions {
   search: string;
   /** Máximo de filas a devolver. */
   limit: number;
-}
-
-export interface SqlQuery {
-  sql: string;
-  parameters: (string | number)[];
 }
 
 /**

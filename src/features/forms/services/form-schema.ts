@@ -8,6 +8,10 @@ import {
   type FormValue,
   type FormValues,
 } from '@/models/form.model';
+import { parseNumberInput } from '@/utils/number.utils';
+
+// Se reexporta para no romper a quien ya la importaba desde aquí.
+export { parseNumberInput };
 
 /**
  * Estado editable del formulario y su validación, construidos a partir de la plantilla.
@@ -28,23 +32,7 @@ export const FORM_MESSAGES = {
   integerOnly: 'Ingresa un número entero, sin decimales.',
 } as const;
 
-const INTEGER = /^-?\d+$/;
-const DECIMAL = /^-?(?:\d+(?:[.,]\d*)?|[.,]\d+)$/;
-
 const isNumeric = (type: FormFieldType) => type === 'number' || type === 'decimal';
-
-/**
- * Número escrito por el técnico. Acepta coma o punto decimal.
- * Devuelve `null` si está vacío o no es válido para el tipo de campo.
- */
-export function parseNumberInput(text: string, type: 'number' | 'decimal'): number | null {
-  const trimmed = text.trim();
-  if (!trimmed) return null;
-  if (type === 'number') return INTEGER.test(trimmed) ? Number(trimmed) : null;
-  if (!DECIMAL.test(trimmed)) return null;
-  const value = Number(trimmed.replace(',', '.'));
-  return Number.isFinite(value) ? value : null;
-}
 
 /** Mensaje de error de un número no vacío, o `null` si es válido. */
 function numberError(text: string, type: 'number' | 'decimal'): string | null {

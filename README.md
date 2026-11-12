@@ -86,7 +86,7 @@ El alias `@/` apunta a `src/`.
 - [x] Etapa 6 — Dashboard
 - [x] Etapa 7 — Visitas
 - [x] Etapa 8 — Formularios dinámicos
-- [ ] Etapa 9 — Materiales
+- [x] Etapa 9 — Materiales
 - [ ] Etapa 10 — Fotografías
 - [ ] Etapa 11 — Anotaciones
 - [ ] Etapa 12 — Resumen de visita
