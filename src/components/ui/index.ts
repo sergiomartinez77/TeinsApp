@@ -2,6 +2,7 @@ export { AppText, type AppTextProps } from './AppText';
 export { Badge, type BadgeProps } from './Badge';
 export { Button, type ButtonProps, type ButtonVariant } from './Button';
 export { Card, type CardProps } from './Card';
+export { Checkbox, type CheckboxProps } from './Checkbox';
 export {
   CONNECTIVITY_BANNER_HEIGHT,
   CONNECTIVITY_MESSAGES,

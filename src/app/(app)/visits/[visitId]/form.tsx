@@ -1,0 +1,310 @@
+import { useLocalSearchParams } from 'expo-router';
+import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  View,
+  type ScrollViewInstance,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { AppBar } from '@/components/layout/AppBar';
+import {
+  AppText,
+  Button,
+  ConnectivityBanner,
+  ErrorScreen,
+  Icon,
+  IconButton,
+  LoadingScreen,
+} from '@/components/ui';
+import { AutosaveIndicator } from '@/features/forms/components/AutosaveIndicator';
+import { FormSectionView } from '@/features/forms/components/FormSectionView';
+import { SectionChips } from '@/features/forms/components/SectionChips';
+import { useFormEditor } from '@/features/forms/hooks/useFormEditor';
+import { useFormResponse } from '@/features/forms/hooks/useFormResponse';
+import { useFormTemplates } from '@/features/forms/hooks/useFormTemplates';
+import {
+  findTemplate,
+  resolveTemplateForResponse,
+  templateForVisitType,
+} from '@/features/forms/services/template.service';
+import { useVisit } from '@/features/visits/hooks/useVisits';
+import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
+import { useConnectivity } from '@/hooks/useConnectivity';
+import { useRequiredUser } from '@/hooks/useCurrentUser';
+import type { FormResponse, FormTemplate } from '@/models/form.model';
+import { isEditable, type Visit } from '@/models/visit.model';
+import { colors, radius, spacing } from '@/theme';
+import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
+import { formatDateTime } from '@/utils/date.utils';
+
+const CONTENT_MAX_WIDTH = 720;
+const TEMPLATE_NOT_FOUND = 'No se encontró la plantilla de este formulario.';
+
+/** Ruta `/visits/[visitId]/form` — formulario técnico dinámico con autoguardado. */
+export default function VisitFormScreen() {
+  const { visitId, templateId } = useLocalSearchParams<{ visitId: string; templateId?: string }>();
+  const user = useRequiredUser();
+  const isOnline = useConnectivity();
+
+  const visitQuery = useVisit(user.id, visitId);
+  const responseQuery = useFormResponse(visitId);
+  const templatesQuery = useFormTemplates();
+
+  const { visit } = visitQuery;
+  const { response } = responseQuery;
+  const { catalog } = templatesQuery;
+
+  const template = useMemo(() => {
+    if (!visit) return null;
+    // Con respuesta, siempre su plantilla; sin ella, la elegida en el selector.
+    if (response) return resolveTemplateForResponse(catalog, response, visit.visitType);
+    if (templateId) return findTemplate(catalog, templateId);
+    return templateForVisitType(catalog, visit.visitType);
+  }, [catalog, response, templateId, visit]);
+
+  const fallback = (content: ReactNode) => (
+    <View style={styles.screen}>
+      <AppBar title="Formulario técnico" bottom={<ConnectivityBanner isOnline={isOnline} />} />
+      {content}
+    </View>
+  );
+
+  if (visitQuery.isLoading || responseQuery.isLoading || templatesQuery.isLoading) {
+    return fallback(<LoadingScreen message="Cargando formulario..." />);
+  }
+
+  const hasError = visitQuery.hasError || responseQuery.hasError || templatesQuery.hasError;
+  if (hasError || !visit) {
+    return fallback(
+      <ErrorScreen
+        message={hasError ? DEFAULT_ERROR_MESSAGES.database : VISIT_MESSAGES.notFound}
+      />,
+    );
+  }
+  if (!template) return fallback(<ErrorScreen message={TEMPLATE_NOT_FOUND} />);
+
+  return (
+    <FormEditor
+      key={template.id}
+      visit={visit}
+      template={template}
+      response={response}
+      isOnline={isOnline}
+    />
+  );
+}
+
+interface FormEditorProps {
+  visit: Visit;
+  template: FormTemplate;
+  response: FormResponse | null;
+  isOnline: boolean;
+}
+
+function FormEditor({ visit, template, response, isOnline }: FormEditorProps) {
+  const insets = useSafeAreaInsets();
+  const scrollRef = useRef<ScrollViewInstance>(null);
+
+  const isComplete = response?.isComplete ?? false;
+  const readOnly = isComplete || !isEditable(visit);
+
+  const editor = useFormEditor({
+    visitId: visit.id,
+    template,
+    initialValues: response?.values ?? {},
+    readOnly,
+  });
+  const { sectionIndex, setSectionIndex } = editor;
+
+  // Al cambiar de sección se vuelve al principio.
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+  }, [sectionIndex]);
+
+  const sections = template.sections;
+  const index = Math.min(sectionIndex, sections.length - 1);
+  const section = sections[index];
+  const isFirst = index === 0;
+  const isLast = index === sections.length - 1;
+
+  return (
+    <View style={styles.screen}>
+      <AppBar
+        title={template.name}
+        actions={
+          <>
+            <AutosaveIndicator status={editor.autosaveStatus} />
+            {readOnly ? null : (
+              <IconButton
+                icon="save"
+                accessibilityLabel="Guardar ahora"
+                color={colors.onPrimary}
+                onPress={editor.saveNow}
+                testID="form-save"
+              />
+            )}
+          </>
+        }
+        bottom={<ConnectivityBanner isOnline={isOnline} />}
+      />
+
+      {sections.length > 1 ? (
+        <SectionChips
+          sections={sections}
+          activeIndex={index}
+          errorSectionIds={editor.errorSectionIds}
+          onSelect={setSectionIndex}
+        />
+      ) : null}
+
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          ref={scrollRef}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={[
+            styles.scroll,
+            {
+              paddingLeft: insets.left + spacing.screenHorizontal,
+              paddingRight: insets.right + spacing.screenHorizontal,
+              paddingBottom: insets.bottom + spacing.lg,
+            },
+          ]}
+        >
+          <View style={styles.content}>
+            {isComplete ? (
+              <Banner
+                icon="check-circle"
+                color={colors.success}
+                background={colors.successLight}
+                message="Formulario completado"
+                detail={response?.completedAt ? formatDateTime(response.completedAt) : undefined}
+              />
+            ) : readOnly ? (
+              <Banner
+                icon="lock"
+                color={colors.info}
+                background={colors.infoLight}
+                message="La visita está cerrada: el formulario es de solo lectura."
+              />
+            ) : null}
+
+            {sections.length > 1 ? (
+              <AppText variant="labelMedium">
+                Sección {index + 1} de {sections.length}
+              </AppText>
+            ) : null}
+
+            {section ? (
+              <FormSectionView
+                section={section}
+                control={editor.control}
+                clearErrors={editor.clearErrors}
+                readOnly={readOnly}
+              />
+            ) : null}
+
+            <View style={styles.navigation}>
+              <Button
+                label="Anterior"
+                icon="chevron-left"
+                variant="outlined"
+                onPress={() => setSectionIndex(index - 1)}
+                disabled={isFirst}
+                style={styles.navButton}
+              />
+              {!isLast ? (
+                <Button
+                  label="Siguiente"
+                  icon="chevron-right"
+                  onPress={() => setSectionIndex(index + 1)}
+                  style={styles.navButton}
+                />
+              ) : null}
+            </View>
+
+            {isLast && !readOnly ? (
+              <Button
+                label="Completar formulario"
+                icon="task-alt"
+                color={colors.secondaryDark}
+                onPress={editor.complete}
+                loading={editor.isCompleting}
+                testID="form-complete"
+              />
+            ) : null}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+interface BannerProps {
+  icon: 'check-circle' | 'lock';
+  color: string;
+  background: string;
+  message: string;
+  detail?: string;
+}
+
+function Banner({ icon, color, background, message, detail }: BannerProps) {
+  return (
+    <View
+      style={[styles.banner, { backgroundColor: background, borderColor: color }]}
+      accessible
+      accessibilityRole="text"
+      accessibilityLabel={detail ? `${message}, ${detail}` : message}
+    >
+      <Icon name={icon} size={24} color={color} />
+      <View style={styles.flex}>
+        <AppText variant="titleSmall" color={color}>
+          {message}
+        </AppText>
+        {detail ? <AppText variant="bodySmall">{detail}</AppText> : null}
+      </View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  flex: {
+    flex: 1,
+  },
+  scroll: {
+    flexGrow: 1,
+    paddingTop: spacing.screenVertical,
+  },
+  content: {
+    width: '100%',
+    maxWidth: CONTENT_MAX_WIDTH,
+    alignSelf: 'center',
+    gap: spacing.md,
+  },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm + 4,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderRadius: radius.md,
+  },
+  navigation: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  navButton: {
+    flex: 1,
+  },
+});

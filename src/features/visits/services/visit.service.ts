@@ -1,10 +1,5 @@
 import { canCreateVisit, type UserProfile } from '@/models/user.model';
-import {
-  transitionVisit,
-  visitFromRow,
-  type Visit,
-  type VisitStatus,
-} from '@/models/visit.model';
+import { transitionVisit, visitFromRow, type Visit, type VisitStatus } from '@/models/visit.model';
 import { appError, err, ok, validationError, type Result } from '@/types/errors';
 import { scopedLogger } from '@/utils/logger';
 import { generateId } from '@/utils/uuid.utils';
@@ -114,7 +109,8 @@ async function changeStatus(
         visitId,
         technicianId,
       ]);
-      if (!row) throw new VisitRuleError(err(validationError(VISIT_MESSAGES.notFound, 'not_found')));
+      if (!row)
+        throw new VisitRuleError(err(validationError(VISIT_MESSAGES.notFound, 'not_found')));
 
       const current = visitFromRow(row);
       const transition = transitionVisit(current, next, now);

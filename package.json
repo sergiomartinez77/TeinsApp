@@ -9,6 +9,7 @@
     "@powersync/op-sqlite": "^0.9.17",
     "@powersync/react": "^1.10.0",
     "@powersync/react-native": "^1.35.11",
+    "@react-native-community/datetimepicker": "9.2.1",
     "@react-native-community/netinfo": "12.0.1",
     "@supabase/supabase-js": "^2.119.0",
     "@tanstack/react-query": "^5.107.1",

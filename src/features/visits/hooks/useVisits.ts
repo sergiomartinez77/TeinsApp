@@ -4,11 +4,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '@/constants/app.constants';
 import { visitFromRow, type Visit } from '@/models/visit.model';
 
-import {
-  buildVisitListQuery,
-  VISIT_BY_ID_SQL,
-  type VisitFilter,
-} from '../services/visit.queries';
+import { buildVisitListQuery, VISIT_BY_ID_SQL, type VisitFilter } from '../services/visit.queries';
 
 export interface VisitListResult {
   visits: Visit[];
