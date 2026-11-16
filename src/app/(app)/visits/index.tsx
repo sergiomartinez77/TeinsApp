@@ -9,6 +9,7 @@ import {
   EmptyState,
   ErrorScreen,
   Fab,
+  FAB_CLEARANCE,
   Icon,
   IconButton,
   LoadingScreen,
@@ -23,10 +24,9 @@ import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import { canCreateVisit } from '@/models/user.model';
-import { colors, radius, spacing } from '@/theme';
+import { colors, contentWidths, radius, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
-
-const CONTENT_MAX_WIDTH = 840;
+import { userErrorMessage } from '@/utils/result.utils';
 
 const EMPTY_MESSAGES: Record<VisitFilter, { message: string; hint: string }> = {
   all: {
@@ -156,7 +156,7 @@ export default function VisitsListScreen() {
               paddingLeft: insets.left + spacing.screenHorizontal,
               paddingRight: insets.right + spacing.screenHorizontal,
               // Espacio para que el botón flotante no tape la última visita.
-              paddingBottom: insets.bottom + 96,
+              paddingBottom: insets.bottom + FAB_CLEARANCE,
             },
           ]}
           onEndReached={list.loadMore}
@@ -190,7 +190,7 @@ export default function VisitsListScreen() {
         visible={dialogOpen}
         onDismiss={closeDialog}
         isSubmitting={create.isPending}
-        error={create.error?.message ?? null}
+        error={create.error ? userErrorMessage(create.error) : null}
         onSubmit={(input) =>
           create.mutate(input, {
             onSuccess: (visit) => {
@@ -233,7 +233,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingTop: spacing.screenVertical,
     width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
+    maxWidth: contentWidths.list,
     alignSelf: 'center',
   },
   separator: {

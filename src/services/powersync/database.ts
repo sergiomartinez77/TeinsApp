@@ -55,11 +55,6 @@ export async function openDatabase(profile: DatabaseProfile): Promise<PowerSyncD
   }
 }
 
-/** Base abierta actualmente, o `null` si todavía no se abrió. */
-export function getDatabase(): PowerSyncDatabase | null {
-  return current?.db ?? null;
-}
-
 export function getDatabaseProfile(): DatabaseProfile | null {
   return current?.profile ?? null;
 }
@@ -71,19 +66,6 @@ export function getDatabaseProfile(): DatabaseProfile | null {
 export async function connectDatabase(connector: PowerSyncBackendConnector): Promise<void> {
   if (!current || current.profile !== 'main') return;
   await current.db.connect(connector);
-}
-
-/** Detiene la sincronización conservando todos los datos locales. */
-export async function disconnectDatabase(): Promise<void> {
-  if (!current) return;
-  await current.db.disconnect();
-}
-
-/** Número de cambios locales que aún no se han subido al servidor. */
-export async function countPendingUploads(): Promise<number> {
-  if (!current) return 0;
-  const stats = await current.db.getUploadQueueStats();
-  return stats.count;
 }
 
 /**

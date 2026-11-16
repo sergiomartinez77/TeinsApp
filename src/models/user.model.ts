@@ -12,10 +12,6 @@ export function canCreateVisit(role: UserRole): boolean {
   return role === 'technician' || role === 'admin';
 }
 
-export function canEditVisit(role: UserRole): boolean {
-  return role === 'technician' || role === 'admin';
-}
-
 export function canViewAllVisits(role: UserRole): boolean {
   return role === 'office' || role === 'admin';
 }

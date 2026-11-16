@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Animated, StyleSheet } from 'react-native';
 
+import { UI } from '@/constants/app.constants';
 import { colors, spacing } from '@/theme';
 
 import { Icon } from './Icon';
 
 export const CONNECTIVITY_BANNER_HEIGHT = 28;
-const ANIMATION_MS = 250;
 
 export const CONNECTIVITY_MESSAGES = {
   online: 'Conectado',
@@ -28,7 +28,7 @@ export function ConnectivityBanner({ isOnline }: ConnectivityBannerProps) {
   useEffect(() => {
     const animation = Animated.timing(progress, {
       toValue: isOnline ? 1 : 0,
-      duration: ANIMATION_MS,
+      duration: UI.animationMs,
       useNativeDriver: false,
     });
     animation.start();

@@ -1,10 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
-import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Dialog, Icon, Input, Select } from '@/components/ui';
+import { Button, Dialog, ErrorMessage, Input, Select } from '@/components/ui';
 import { VISIT_TYPE_LABELS, VISIT_TYPES } from '@/models/visit.model';
-import { colors, radius, spacing } from '@/theme';
 
 import {
   createVisitSchema,
@@ -141,28 +139,7 @@ export function CreateVisitDialog({
         )}
       />
 
-      {error ? (
-        <View style={styles.errorBox} accessibilityRole="alert">
-          <Icon name="error-outline" size={20} color={colors.error} />
-          <AppText variant="bodyMedium" color={colors.error} style={styles.errorText}>
-            {error}
-          </AppText>
-        </View>
-      ) : null}
+      {error ? <ErrorMessage message={error} /> : null}
     </Dialog>
   );
 }
-
-const styles = StyleSheet.create({
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    padding: spacing.sm + 4,
-    borderRadius: radius.sm,
-    backgroundColor: colors.errorLight,
-  },
-  errorText: {
-    flex: 1,
-  },
-});

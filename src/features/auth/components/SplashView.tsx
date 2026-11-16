@@ -1,7 +1,7 @@
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppText, Icon } from '@/components/ui';
-import { colors, maxContentWidth, radius, spacing } from '@/theme';
+import { colors, contentWidths, radius, spacing } from '@/theme';
 
 export interface SplashViewProps {
   /** Variables de configuración que faltan; vacío si todo está bien. */
@@ -80,6 +80,6 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.md,
     backgroundColor: colors.errorLight,
-    maxWidth: maxContentWidth,
+    maxWidth: contentWidths.narrow,
   },
 });

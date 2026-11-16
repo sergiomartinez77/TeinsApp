@@ -19,6 +19,7 @@ import {
   Icon,
   IconButton,
   LoadingScreen,
+  ReadOnlyNotice,
 } from '@/components/ui';
 import { AutosaveIndicator } from '@/features/forms/components/AutosaveIndicator';
 import { FormSectionView } from '@/features/forms/components/FormSectionView';
@@ -37,11 +38,10 @@ import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import type { FormResponse, FormTemplate } from '@/models/form.model';
 import { isEditable, type Visit } from '@/models/visit.model';
-import { colors, radius, spacing } from '@/theme';
+import { colors, contentWidths, radius, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 import { formatDateTime } from '@/utils/date.utils';
 
-const CONTENT_MAX_WIDTH = 720;
 const TEMPLATE_NOT_FOUND = 'No se encontró la plantilla de este formulario.';
 
 /** Ruta `/visits/[visitId]/form` — formulario técnico dinámico con autoguardado. */
@@ -179,20 +179,12 @@ function FormEditor({ visit, template, response, isOnline }: FormEditorProps) {
         >
           <View style={styles.content}>
             {isComplete ? (
-              <Banner
-                icon="check-circle"
-                color={colors.success}
-                background={colors.successLight}
+              <CompletedBanner
                 message="Formulario completado"
                 detail={response?.completedAt ? formatDateTime(response.completedAt) : undefined}
               />
             ) : readOnly ? (
-              <Banner
-                icon="lock"
-                color={colors.info}
-                background={colors.infoLight}
-                message="La visita está cerrada: el formulario es de solo lectura."
-              />
+              <ReadOnlyNotice message="La visita está cerrada: el formulario es de solo lectura." />
             ) : null}
 
             {sections.length > 1 ? (
@@ -246,25 +238,23 @@ function FormEditor({ visit, template, response, isOnline }: FormEditorProps) {
   );
 }
 
-interface BannerProps {
-  icon: 'check-circle' | 'lock';
-  color: string;
-  background: string;
+interface CompletedBannerProps {
   message: string;
   detail?: string;
 }
 
-function Banner({ icon, color, background, message, detail }: BannerProps) {
+/** Aviso verde de formulario completado, con la fecha. */
+function CompletedBanner({ message, detail }: CompletedBannerProps) {
   return (
     <View
-      style={[styles.banner, { backgroundColor: background, borderColor: color }]}
+      style={styles.banner}
       accessible
       accessibilityRole="text"
       accessibilityLabel={detail ? `${message}, ${detail}` : message}
     >
-      <Icon name={icon} size={24} color={color} />
+      <Icon name="check-circle" size={24} color={colors.success} />
       <View style={styles.flex}>
-        <AppText variant="titleSmall" color={color}>
+        <AppText variant="titleSmall" color={colors.success}>
           {message}
         </AppText>
         {detail ? <AppText variant="bodySmall">{detail}</AppText> : null}
@@ -287,17 +277,19 @@ const styles = StyleSheet.create({
   },
   content: {
     width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
+    maxWidth: contentWidths.form,
     alignSelf: 'center',
     gap: spacing.md,
   },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm + 4,
+    gap: spacing.sm + spacing.xs,
     padding: spacing.md,
     borderWidth: 1,
     borderRadius: radius.md,
+    borderColor: colors.success,
+    backgroundColor: colors.successLight,
   },
   navigation: {
     flexDirection: 'row',

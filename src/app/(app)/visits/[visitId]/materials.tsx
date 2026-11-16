@@ -5,13 +5,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
 import {
-  AppText,
   ConnectivityBanner,
   EmptyState,
   ErrorScreen,
   Fab,
-  Icon,
+  FAB_CLEARANCE,
   LoadingScreen,
+  ReadOnlyNotice,
 } from '@/components/ui';
 import { AddMaterialSheet } from '@/features/materials/components/AddMaterialSheet';
 import { EditMaterialDialog } from '@/features/materials/components/EditMaterialDialog';
@@ -25,10 +25,11 @@ import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import type { VisitMaterial } from '@/models/material.model';
 import { isEditable } from '@/models/visit.model';
-import { colors, radius, spacing } from '@/theme';
+import { colors, contentWidths, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
+import { userErrorMessage } from '@/utils/result.utils';
 
-const CONTENT_MAX_WIDTH = 840;
+const READ_ONLY_MESSAGE = 'La visita está cerrada: los materiales son de solo lectura.';
 
 /** Ruta `/visits/[visitId]/materials` — materiales usados en la visita. */
 export default function VisitMaterialsScreen() {
@@ -112,7 +113,7 @@ export default function VisitMaterialsScreen() {
         ListHeaderComponent={
           readOnly || list.summary.count > 0 ? (
             <View style={styles.header}>
-              {readOnly ? <ReadOnlyNotice /> : null}
+              {readOnly ? <ReadOnlyNotice message={READ_ONLY_MESSAGE} /> : null}
               <MaterialsSummary summary={list.summary} />
             </View>
           ) : undefined
@@ -134,7 +135,7 @@ export default function VisitMaterialsScreen() {
             paddingLeft: insets.left + spacing.screenHorizontal,
             paddingRight: insets.right + spacing.screenHorizontal,
             // Espacio para que el botón flotante no tape el último material.
-            paddingBottom: insets.bottom + 96,
+            paddingBottom: insets.bottom + FAB_CLEARANCE,
           },
         ]}
       />
@@ -157,7 +158,7 @@ export default function VisitMaterialsScreen() {
           addedMaterialIds={list.materialIds}
           onDismiss={closeSheet}
           isSubmitting={add.isPending}
-          error={add.error?.message ?? null}
+          error={add.error ? userErrorMessage(add.error) : null}
           onSubmit={(entry) => add.mutate(entry, { onSuccess: closeSheet })}
         />
       ) : null}
@@ -168,25 +169,13 @@ export default function VisitMaterialsScreen() {
           material={editing}
           onDismiss={closeEditor}
           isSubmitting={update.isPending}
-          error={update.error?.message ?? null}
+          error={update.error ? userErrorMessage(update.error) : null}
           onSubmit={(changes) =>
             update.mutate({ ...changes, visitMaterialId: editing.id }, { onSuccess: closeEditor })
           }
         />
       ) : null}
     </>,
-  );
-}
-
-function ReadOnlyNotice() {
-  const message = 'La visita está cerrada: los materiales son de solo lectura.';
-  return (
-    <View style={styles.notice} accessible accessibilityRole="text" accessibilityLabel={message}>
-      <Icon name="lock" size={24} color={colors.info} />
-      <AppText variant="titleSmall" color={colors.info} style={styles.flex}>
-        {message}
-      </AppText>
-    </View>
   );
 }
 
@@ -199,9 +188,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  flex: {
-    flex: 1,
-  },
   busy: {
     marginRight: spacing.md,
   },
@@ -209,22 +195,12 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingTop: spacing.screenVertical,
     width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
+    maxWidth: contentWidths.list,
     alignSelf: 'center',
   },
   header: {
     gap: spacing.md,
     marginBottom: spacing.md,
-  },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm + 4,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    borderColor: colors.info,
-    backgroundColor: colors.infoLight,
   },
   separator: {
     height: spacing.listItemSpacing,

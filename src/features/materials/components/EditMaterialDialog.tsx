@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Dialog, Input } from '@/components/ui';
+import { AppText, Button, Dialog, ErrorMessage, Input } from '@/components/ui';
 import type { VisitMaterial } from '@/models/material.model';
 import { spacing } from '@/theme';
 import { formatQuantity } from '@/utils/number.utils';
@@ -13,8 +13,6 @@ import {
   type MaterialEntryFormValues,
   type MaterialEntryInput,
 } from '../validation';
-
-import { SaveErrorBox } from './SaveErrorBox';
 
 export interface EditMaterialDialogProps {
   material: VisitMaterial;
@@ -101,7 +99,7 @@ export function EditMaterialDialog({
         )}
       />
 
-      {error ? <SaveErrorBox message={error} /> : null}
+      {error ? <ErrorMessage message={error} /> : null}
     </Dialog>
   );
 }

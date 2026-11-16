@@ -3,8 +3,8 @@ import { useRef, type ComponentRef } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { StyleSheet, View, type TextInput } from 'react-native';
 
-import { AppText, Button, Icon, Input } from '@/components/ui';
-import { colors, radius, spacing } from '@/theme';
+import { Button, ErrorMessage, Input } from '@/components/ui';
+import { spacing } from '@/theme';
 
 import { loginSchema, type LoginFormValues } from '../validation';
 
@@ -81,14 +81,7 @@ export function LoginForm({ onSubmit, onDemo, isSubmitting, error, onEdit }: Log
         )}
       />
 
-      {error ? (
-        <View style={styles.errorBox} accessibilityRole="alert" accessibilityLiveRegion="polite">
-          <Icon name="error-outline" size={20} color={colors.error} />
-          <AppText variant="bodyMedium" color={colors.error} style={styles.errorText}>
-            {error}
-          </AppText>
-        </View>
-      ) : null}
+      {error ? <ErrorMessage message={error} /> : null}
 
       <Button
         label={isSubmitting ? 'Iniciando sesión...' : 'Iniciar sesión'}
@@ -112,16 +105,5 @@ export function LoginForm({ onSubmit, onDemo, isSubmitting, error, onEdit }: Log
 const styles = StyleSheet.create({
   form: {
     gap: spacing.md,
-  },
-  errorBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: spacing.sm,
-    padding: spacing.sm + 4,
-    borderRadius: radius.sm,
-    backgroundColor: colors.errorLight,
-  },
-  errorText: {
-    flex: 1,
   },
 });

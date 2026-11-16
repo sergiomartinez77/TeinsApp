@@ -4,20 +4,14 @@ import { Alert } from 'react-native';
 
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import type { Visit } from '@/models/visit.model';
-import type { AppError, Result } from '@/types/errors';
+import type { AppError } from '@/types/errors';
+import { unwrapResult as unwrap, userErrorMessage } from '@/utils/result.utils';
 
 import { completeVisit, createVisit, startVisit } from '../services/visit.service';
 import type { CreateVisitInput } from '../validation';
 
-/** Convierte un `Result` fallido en excepción para que la mutación lo trate como error. */
-async function unwrap<T>(result: Promise<Result<T>>): Promise<T> {
-  const settled = await result;
-  if (!settled.ok) throw settled.error;
-  return settled.data;
-}
-
 function showError(title: string) {
-  return (error: AppError) => Alert.alert(title, error.message);
+  return (error: AppError) => Alert.alert(title, userErrorMessage(error));
 }
 
 /**

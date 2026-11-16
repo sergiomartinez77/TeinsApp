@@ -4,7 +4,7 @@ import {
   VISIT_TYPE_LABELS,
   VISIT_TYPES,
 } from '@/models/visit.model';
-import { escapeLike, type SqlQuery } from '@/utils/sql.utils';
+import { containsAnyCondition, escapeLike, type SqlQuery } from '@/utils/sql.utils';
 
 // Se reexportan para no romper a quien ya las importaba desde aquí.
 export { escapeLike, type SqlQuery };
@@ -119,11 +119,10 @@ export function buildVisitListQuery(technicianId: string, options: VisitListOpti
 
   const search = options.search.trim();
   if (search) {
-    const pattern = `%${escapeLike(search)}%`;
-    const textMatches = ['title', 'client_name', 'address', 'visit_type'].map(
-      (column) => `${column} LIKE ? ESCAPE '\\'`,
-    );
-    parameters.push(pattern, pattern, pattern, pattern);
+    // Ignora mayúsculas también en letras acentuadas ("ÉXITO" encuentra "éxito").
+    const text = containsAnyCondition(['title', 'client_name', 'address', 'visit_type'], search);
+    const textMatches = [text.sql];
+    parameters.push(...text.parameters);
 
     const types = visitTypesMatching(search);
     if (types.length > 0) {

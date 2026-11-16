@@ -4,7 +4,8 @@ import { Alert } from 'react-native';
 
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import type { VisitMaterial } from '@/models/material.model';
-import type { AppError, Result } from '@/types/errors';
+import type { AppError } from '@/types/errors';
+import { unwrapResult as unwrap, userErrorMessage } from '@/utils/result.utils';
 
 import {
   addMaterialToVisit,
@@ -21,13 +22,6 @@ export interface NewMaterialEntry extends MaterialEntryInput {
 /** Cambios de un material ya agregado. */
 export interface MaterialChanges extends MaterialEntryInput {
   visitMaterialId: string;
-}
-
-/** Convierte un `Result` fallido en excepción para que la mutación lo trate como error. */
-async function unwrap<T>(result: Promise<Result<T>>): Promise<T> {
-  const settled = await result;
-  if (!settled.ok) throw settled.error;
-  return settled.data;
 }
 
 /**
@@ -49,7 +43,7 @@ export function useMaterialActions(visitId: string) {
   const remove = useMutation<void, AppError, string>({
     mutationFn: (visitMaterialId) =>
       unwrap(removeVisitMaterial(db, user.id, { visitId, visitMaterialId })),
-    onError: (error) => Alert.alert('No se pudo quitar el material', error.message),
+    onError: (error) => Alert.alert('No se pudo quitar el material', userErrorMessage(error)),
   });
 
   const isBusy = add.isPending || update.isPending || remove.isPending;

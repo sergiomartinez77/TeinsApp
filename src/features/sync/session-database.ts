@@ -9,6 +9,7 @@ import {
   getDatabaseProfile,
   openDatabase,
 } from '@/services/powersync/database';
+import { waitForPendingWrites } from '@/services/powersync/pending-writes';
 import { getSecureItem, setSecureItem } from '@/services/storage/secure-storage';
 import { getSupabase } from '@/services/supabase/client';
 import { scopedLogger } from '@/utils/logger';
@@ -79,6 +80,9 @@ export function prepareSessionDatabase(
  */
 export function releaseSessionDatabase(): Promise<void> {
   return enqueue(async () => {
+    // Las pantallas que se desmontan con la sesión guardan lo pendiente al
+    // desmontarse; la base no se cierra hasta que esas escrituras terminen.
+    await waitForPendingWrites();
     const profile = getDatabaseProfile();
     if (!profile) return;
     await closeDatabase({ clear: profile === 'demo' });

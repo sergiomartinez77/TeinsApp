@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors, maxContentWidth, spacing } from '@/theme';
+import { colors, contentWidths, spacing } from '@/theme';
 
 import { AppText } from './AppText';
 import { Button } from './Button';
@@ -44,7 +44,7 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   message: {
-    maxWidth: maxContentWidth,
+    maxWidth: contentWidths.narrow,
   },
   retry: {
     alignSelf: 'center',

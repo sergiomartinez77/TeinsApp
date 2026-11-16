@@ -97,6 +97,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       // El modo demo no tiene sesión real que cerrar.
       if (!wasDemo) await authService.signOut();
+    } catch (error) {
+      // La sesión se da por cerrada igualmente: el fallo solo queda en el log.
+      log.error('No se pudo borrar la sesión guardada en el dispositivo', error);
     } finally {
       set({ ...SIGNED_OUT, error: null });
     }
@@ -106,7 +109,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { status, isDemoMode, isSubmitting } = get();
     // Se ignora en modo demo y durante un cierre de sesión iniciado por el usuario.
     if (status !== 'authenticated' || isDemoMode || isSubmitting) return;
-    void authService.clearStoredProfile();
+    void authService
+      .clearStoredProfile()
+      .catch((error: unknown) => log.error('No se pudo borrar el perfil guardado', error));
     set({ ...SIGNED_OUT, error: authService.AUTH_MESSAGES.sessionExpired });
   },
 

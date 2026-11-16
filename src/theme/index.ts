@@ -1,9 +1,9 @@
 export { colors, withAlpha, type ColorToken } from './colors';
 export {
   breakpoints,
+  contentWidths,
   isSplitViewWidth,
   isTabletWidth,
-  maxContentWidth,
   radius,
   spacing,
 } from './spacing';

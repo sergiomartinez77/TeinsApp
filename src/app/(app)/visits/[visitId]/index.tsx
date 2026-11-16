@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
-import { ConnectivityBanner, ErrorScreen, LoadingScreen } from '@/components/ui';
+import { ConnectivityBanner, ErrorScreen, LoadingScreen, ReadOnlyNotice } from '@/components/ui';
 import { SectionGrid, type VisitSection } from '@/features/visits/components/SectionGrid';
 import { VisitActionBar } from '@/features/visits/components/VisitActionBar';
 import { VisitInfoCard } from '@/features/visits/components/VisitInfoCard';
@@ -12,10 +12,11 @@ import { useVisit } from '@/features/visits/hooks/useVisits';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
-import { colors, isSplitViewWidth, spacing } from '@/theme';
+import { isEditable } from '@/models/visit.model';
+import { colors, contentWidths, isSplitViewWidth, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
-const CONTENT_MAX_WIDTH = 1100;
+const READ_ONLY_MESSAGE = 'La visita está cerrada: puedes consultarla, pero ya no editarla.';
 
 /** Ruta `/visits/[visitId]` — detalle con acceso a las secciones de trabajo. */
 export default function VisitDetailScreen() {
@@ -65,7 +66,12 @@ export default function VisitDetailScreen() {
     );
   }
 
-  const info = <VisitInfoCard visit={visit} />;
+  const info = (
+    <>
+      {isEditable(visit) ? null : <ReadOnlyNotice message={READ_ONLY_MESSAGE} />}
+      <VisitInfoCard visit={visit} />
+    </>
+  );
   const actions = (
     <VisitActionBar
       status={visit.status}
@@ -121,7 +127,7 @@ const styles = StyleSheet.create({
   },
   content: {
     width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
+    maxWidth: contentWidths.wide,
     alignSelf: 'center',
     gap: spacing.md,
   },

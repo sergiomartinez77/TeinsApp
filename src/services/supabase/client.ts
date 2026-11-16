@@ -4,6 +4,11 @@ import { AppState } from 'react-native';
 import { SECURE_KEYS } from '@/constants/app.constants';
 import { appConfig, missingConfigKeys } from '@/constants/config';
 import { secureStorageAdapter } from '@/services/storage/secure-storage';
+import { scopedLogger } from '@/utils/logger';
+
+const log = scopedLogger('auth');
+const logRefreshError = (error: unknown) =>
+  log.warn('No se pudo cambiar el refresco automático de la sesión', error);
 
 let client: SupabaseClient | null = null;
 
@@ -46,9 +51,9 @@ export function getSupabase(): SupabaseClient {
 export function registerAuthAutoRefresh(supabase: SupabaseClient = getSupabase()): () => void {
   const apply = (status: string | null | undefined) => {
     if (status === 'active') {
-      void supabase.auth.startAutoRefresh();
+      void supabase.auth.startAutoRefresh().catch(logRefreshError);
     } else {
-      void supabase.auth.stopAutoRefresh();
+      void supabase.auth.stopAutoRefresh().catch(logRefreshError);
     }
   };
 
@@ -56,6 +61,6 @@ export function registerAuthAutoRefresh(supabase: SupabaseClient = getSupabase()
   const subscription = AppState.addEventListener('change', apply);
   return () => {
     subscription.remove();
-    void supabase.auth.stopAutoRefresh();
+    void supabase.auth.stopAutoRefresh().catch(logRefreshError);
   };
 }

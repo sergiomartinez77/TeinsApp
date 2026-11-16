@@ -5,12 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
 import {
-  AppText,
   ConnectivityBanner,
   ErrorScreen,
-  Icon,
   IconButton,
   LoadingScreen,
+  ReadOnlyNotice,
 } from '@/components/ui';
 import { AnnotationToolbar } from '@/features/annotations/components/AnnotationToolbar';
 import { DrawingCanvas } from '@/features/annotations/components/DrawingCanvas';
@@ -132,7 +131,17 @@ function AnnotationEditor({ visit, technicianId, annotation, isOnline }: Annotat
         bottom={<ConnectivityBanner isOnline={isOnline} />}
       />
 
-      {readOnly ? <ReadOnlyNotice /> : null}
+      {readOnly ? (
+        <ReadOnlyNotice
+          message={READ_ONLY_MESSAGE}
+          variant="bar"
+          // En horizontal el aviso no queda bajo la muesca ni los bordes redondeados.
+          style={{
+            paddingLeft: insets.left + spacing.md,
+            paddingRight: insets.right + spacing.md,
+          }}
+        />
+      ) : null}
 
       <View
         style={[
@@ -167,22 +176,6 @@ function AnnotationEditor({ visit, technicianId, annotation, isOnline }: Annotat
   );
 }
 
-function ReadOnlyNotice() {
-  return (
-    <View
-      style={styles.notice}
-      accessible
-      accessibilityRole="text"
-      accessibilityLabel={READ_ONLY_MESSAGE}
-    >
-      <Icon name="lock" size={20} color={colors.info} />
-      <AppText variant="bodyMedium" color={colors.info} style={styles.flex}>
-        {READ_ONLY_MESSAGE}
-      </AppText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -191,9 +184,6 @@ const styles = StyleSheet.create({
   fallback: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  flex: {
-    flex: 1,
   },
   body: {
     flex: 1,
@@ -207,13 +197,5 @@ const styles = StyleSheet.create({
   canvasArea: {
     flex: 1,
     padding: spacing.sm,
-  },
-  notice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.infoLight,
   },
 });

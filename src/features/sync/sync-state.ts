@@ -105,3 +105,13 @@ export function describeSyncState(state: SyncState, pendingCount: number): SyncS
       };
   }
 }
+
+/**
+ * Aviso de cambios que el servidor rechazó y quedaron guardados en el
+ * dispositivo para revisión (tabla local `sync_issues`). `null` si no hay.
+ */
+export function syncIssuesNotice(count: number): string | null {
+  if (count <= 0) return null;
+  if (count === 1) return '1 cambio no pudo enviarse y quedó guardado para revisión.';
+  return `${count} cambios no pudieron enviarse y quedaron guardados para revisión.`;
+}

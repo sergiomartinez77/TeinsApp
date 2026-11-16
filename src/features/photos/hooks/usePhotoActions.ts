@@ -4,30 +4,34 @@ import { Alert, Linking } from 'react-native';
 
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import type { VisitPhoto } from '@/models/photo.model';
-import type { AppError, Result } from '@/types/errors';
+import type { AppError } from '@/types/errors';
+import { scopedLogger } from '@/utils/logger';
+import { settleResult, unwrapResult as unwrap, userErrorMessage } from '@/utils/result.utils';
 
 import { captureImage, type PhotoSource } from '../services/photo-capture';
 import { devicePhotoFiles, discardFile } from '../services/photo-files';
 import { requestPhotoUpload } from '../services/photo-uploader';
 import { addPhoto, deletePhoto } from '../services/photo.service';
 
-/** Convierte un `Result` fallido en excepción para que la mutación lo trate como error. */
-async function unwrap<T>(result: Promise<Result<T>>): Promise<T> {
-  const settled = await result;
-  if (!settled.ok) throw settled.error;
-  return settled.data;
-}
+const log = scopedLogger('photos');
 
 /** Aviso de error; si falta un permiso, ofrece abrir los ajustes del dispositivo. */
 function showError(title: string, error: AppError): void {
+  const message = userErrorMessage(error);
   if (error.kind === 'permission') {
-    Alert.alert(title, error.message, [
+    Alert.alert(title, message, [
       { text: 'Cancelar', style: 'cancel' },
-      { text: 'Abrir configuración', onPress: () => void Linking.openSettings() },
+      {
+        text: 'Abrir configuración',
+        onPress: () =>
+          void Linking.openSettings().catch((cause: unknown) =>
+            log.warn('No se pudo abrir la configuración del dispositivo', cause),
+          ),
+      },
     ]);
     return;
   }
-  Alert.alert(title, error.message);
+  Alert.alert(title, message);
 }
 
 /**
@@ -43,7 +47,7 @@ export function usePhotoActions(visitId: string) {
     mutationFn: async (source) => {
       const image = await unwrap(captureImage(source));
       if (!image) return null;
-      const saved = await addPhoto(db, devicePhotoFiles, user.id, { visitId, image });
+      const saved = await settleResult(addPhoto(db, devicePhotoFiles, user.id, { visitId, image }));
       // Si no se guardó, el JPEG temporal ya no sirve.
       if (!saved.ok) discardFile(image.uri);
       return unwrap(Promise.resolve(saved));

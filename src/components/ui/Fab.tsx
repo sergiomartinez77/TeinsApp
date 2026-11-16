@@ -4,6 +4,9 @@ import { colors, radius, spacing } from '@/theme';
 
 import { Icon, type IconName } from './Icon';
 
+/** Espacio bajo una lista para que un botón flotante no tape su último elemento. */
+export const FAB_CLEARANCE = 96;
+
 export interface FabProps {
   icon: IconName;
   onPress: () => void;
@@ -66,7 +69,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     borderRadius: radius.lg,
     elevation: 4,
-    shadowColor: '#000000',
+    shadowColor: colors.shadow,
     shadowOpacity: 0.25,
     shadowRadius: 4,
     shadowOffset: { width: 0, height: 2 },

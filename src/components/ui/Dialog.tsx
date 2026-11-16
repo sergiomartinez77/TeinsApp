@@ -10,7 +10,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, maxContentWidth, radius, spacing } from '@/theme';
+import { colors, contentWidths, radius, spacing } from '@/theme';
 
 import { AppText } from './AppText';
 
@@ -30,7 +30,7 @@ export interface DialogProps {
 }
 
 /**
- * Diálogo modal. En tablet queda centrado con ancho máximo de 480dp;
+ * Diálogo modal. En tablet queda centrado con ancho máximo de 480dp (640dp como hoja inferior);
  * el contenido se desplaza si no cabe y se adapta al teclado.
  */
 export function Dialog({
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
   },
   surface: {
     width: '100%',
-    maxWidth: maxContentWidth,
+    maxWidth: contentWidths.narrow,
     maxHeight: '100%',
     padding: spacing.lg,
     gap: spacing.md,
@@ -133,7 +133,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   sheet: {
-    maxWidth: 640,
+    maxWidth: contentWidths.sheet,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
   },

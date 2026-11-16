@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 
 import { AUTOSAVE } from '@/constants/app.constants';
+import { trackPendingWrite } from '@/services/powersync/pending-writes';
 
 export type AutosaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -26,7 +27,8 @@ export interface AutosaveControls<T> {
  * Autoguardado con espera (debounce).
  *
  * - Cada cambio cancela el temporizador anterior y programa uno nuevo.
- * - Al desmontar la pantalla o pasar la app a segundo plano se guarda de inmediato.
+ * - Al desmontar la pantalla o pasar la app a segundo plano se guarda de inmediato;
+ *   el cierre de la base al terminar la sesión espera a ese guardado.
  * - Los guardados se encadenan: nunca se pisan y el último valor siempre gana.
  * - Si un guardado falla, el cambio queda pendiente para el siguiente intento.
  */
@@ -68,7 +70,9 @@ export function useAutosave<T>({
       setStatus(saved ? 'saved' : 'error');
     };
     queueRef.current = queueRef.current.then(run);
-    return queueRef.current;
+    // Se registra al momento: si la pantalla se desmonta porque terminó la
+    // sesión, el cierre de la base espera a este guardado.
+    return trackPendingWrite(queueRef.current);
   }, [clearTimer]);
 
   const schedule = useCallback(

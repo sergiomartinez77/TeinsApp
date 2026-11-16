@@ -1,6 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, spacing } from '@/theme';
+import { colors, spacing, withAlpha } from '@/theme';
 
 import { VISIT_FILTERS, type VisitFilter } from '../services/visit.queries';
 
@@ -11,11 +12,16 @@ export interface VisitFilterTabsProps {
 
 /** Pestañas del listado: Todas / En progreso / Asignadas / Completadas. */
 export function VisitFilterTabs({ value, onChange }: VisitFilterTabsProps) {
+  const insets = useSafeAreaInsets();
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.row}
+      contentContainerStyle={[
+        styles.row,
+        // En horizontal las pestañas no quedan bajo la muesca.
+        { paddingLeft: insets.left + spacing.sm, paddingRight: insets.right + spacing.sm },
+      ]}
       accessibilityRole="tablist"
     >
       {VISIT_FILTERS.map((filter) => {
@@ -40,7 +46,6 @@ export function VisitFilterTabs({ value, onChange }: VisitFilterTabsProps) {
 const styles = StyleSheet.create({
   row: {
     flexGrow: 1,
-    paddingHorizontal: spacing.sm,
   },
   tab: {
     flexGrow: 1,
@@ -57,7 +62,7 @@ const styles = StyleSheet.create({
   label: {
     fontSize: 14,
     fontWeight: '500',
-    color: 'rgba(255, 255, 255, 0.75)',
+    color: withAlpha(colors.onPrimary, 0.75),
   },
   labelSelected: {
     fontWeight: '700',

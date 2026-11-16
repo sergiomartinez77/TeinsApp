@@ -12,12 +12,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
 import {
-  AppText,
   ConnectivityBanner,
   EmptyState,
   ErrorScreen,
-  Icon,
   LoadingScreen,
+  ReadOnlyNotice,
 } from '@/components/ui';
 import { PhotoFabs } from '@/features/photos/components/PhotoFabs';
 import { PhotoThumbnail } from '@/features/photos/components/PhotoThumbnail';
@@ -30,12 +29,15 @@ import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import { photoCountLabel, type VisitPhoto } from '@/models/photo.model';
 import { isEditable } from '@/models/visit.model';
-import { colors, radius, spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
 /** Ancho aproximado de cada miniatura para decidir las columnas. */
 const TILE_TARGET_WIDTH = 160;
 const GRID_GAP = spacing.xs;
+/** Espacio bajo la cuadrícula para que los dos botones flotantes no tapen las últimas fotos. */
+const FABS_CLEARANCE = 160;
+const READ_ONLY_MESSAGE = 'La visita está cerrada: las fotografías son de solo lectura.';
 
 /** 3 columnas en teléfono; más en pantallas anchas. */
 function columnsFor(width: number): number {
@@ -135,7 +137,11 @@ export default function VisitPhotosScreen() {
           />
         )}
         columnWrapperStyle={columns > 1 ? styles.row : undefined}
-        ListHeaderComponent={readOnly ? <ReadOnlyNotice /> : undefined}
+        ListHeaderComponent={
+          readOnly ? (
+            <ReadOnlyNotice message={READ_ONLY_MESSAGE} style={styles.notice} />
+          ) : undefined
+        }
         ListEmptyComponent={
           <EmptyState
             icon="photo-camera"
@@ -154,8 +160,7 @@ export default function VisitPhotosScreen() {
           {
             paddingLeft: insets.left + horizontalPadding,
             paddingRight: insets.right + horizontalPadding,
-            // Espacio para que los botones flotantes no tapen las últimas fotos.
-            paddingBottom: insets.bottom + 160,
+            paddingBottom: insets.bottom + FABS_CLEARANCE,
           },
         ]}
       />
@@ -186,25 +191,10 @@ export default function VisitPhotosScreen() {
   );
 }
 
-function ReadOnlyNotice() {
-  const message = 'La visita está cerrada: las fotografías son de solo lectura.';
-  return (
-    <View style={styles.notice} accessible accessibilityRole="text" accessibilityLabel={message}>
-      <Icon name="lock" size={24} color={colors.info} />
-      <AppText variant="titleSmall" color={colors.info} style={styles.flex}>
-        {message}
-      </AppText>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.background,
-  },
-  flex: {
-    flex: 1,
   },
   busy: {
     marginRight: spacing.md,
@@ -218,15 +208,7 @@ const styles = StyleSheet.create({
     gap: GRID_GAP,
   },
   notice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm + 4,
-    padding: spacing.md,
     marginBottom: spacing.md,
-    borderWidth: 1,
-    borderRadius: radius.md,
-    borderColor: colors.info,
-    backgroundColor: colors.infoLight,
   },
   fabs: {
     position: 'absolute',

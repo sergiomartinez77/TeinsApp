@@ -12,6 +12,17 @@ jest.mock('@/services/supabase/auth.service', () => ({
   clearStoredProfile: jest.fn(),
 }));
 
+const mockLogError = jest.fn();
+jest.mock('@/utils/logger', () => ({
+  scopedLogger: () => ({
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    // Se llama en diferido: el store se carga antes de crear `mockLogError`.
+    error: (...args: unknown[]) => mockLogError(...args),
+  }),
+}));
+
 const service = jest.mocked(authService);
 
 const USER: UserProfile = {
@@ -145,6 +156,19 @@ describe('signOut', () => {
     expect(service.signOut).toHaveBeenCalledTimes(1);
     expect(state()).toMatchObject({ status: 'unauthenticated', user: null, isSubmitting: false });
   });
+
+  it('si falla el borrado en el dispositivo cierra igual y no rechaza la promesa', async () => {
+    useAuthStore.setState({ status: 'authenticated', user: USER });
+    service.signOut.mockRejectedValue(new Error('SecureStore no disponible'));
+
+    await expect(state().signOut()).resolves.toBeUndefined();
+
+    expect(state()).toMatchObject({ status: 'unauthenticated', user: null, isSubmitting: false });
+    expect(mockLogError).toHaveBeenCalledWith(
+      'No se pudo borrar la sesión guardada en el dispositivo',
+      expect.any(Error),
+    );
+  });
 });
 
 describe('handleSessionEnded', () => {
@@ -159,6 +183,21 @@ describe('handleSessionEnded', () => {
       error: 'Tu sesión ha expirado. Por favor inicia sesión nuevamente.',
     });
     expect(service.clearStoredProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('si falla el borrado del perfil lo registra sin dejar la promesa sin capturar', async () => {
+    useAuthStore.setState({ status: 'authenticated', user: USER });
+    service.clearStoredProfile.mockRejectedValue(new Error('SecureStore no disponible'));
+
+    state().handleSessionEnded();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(state().status).toBe('unauthenticated');
+    expect(mockLogError).toHaveBeenCalledWith(
+      'No se pudo borrar el perfil guardado',
+      expect.any(Error),
+    );
   });
 
   it('no afecta al modo demo ni a quien ya está sin sesión', () => {

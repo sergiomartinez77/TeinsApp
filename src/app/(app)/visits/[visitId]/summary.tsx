@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
-import { ConnectivityBanner, ErrorScreen, LoadingScreen } from '@/components/ui';
+import { ConnectivityBanner, ErrorScreen, LoadingScreen, ReadOnlyNotice } from '@/components/ui';
 import { SectionLinks } from '@/features/visits/components/SectionLinks';
 import { VisitInfoCard } from '@/features/visits/components/VisitInfoCard';
 import { useVisitSummary } from '@/features/visits/hooks/useVisitSummary';
@@ -12,11 +12,11 @@ import type { SummarySection } from '@/features/visits/services/visit-summary';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
-import type { Visit } from '@/models/visit.model';
-import { colors, isSplitViewWidth, spacing } from '@/theme';
+import { isEditable, type Visit } from '@/models/visit.model';
+import { colors, contentWidths, isSplitViewWidth, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
-const CONTENT_MAX_WIDTH = 840;
+const READ_ONLY_MESSAGE = 'La visita está cerrada: su contenido ya no se puede editar.';
 
 /** Ruta `/visits/[visitId]/summary` — resumen de solo lectura de la visita. */
 export default function VisitSummaryScreen() {
@@ -66,7 +66,12 @@ function SummaryContent({ technicianId, visit }: { technicianId: string; visit: 
   const openSection = (section: SummarySection) =>
     router.push({ pathname: `/visits/[visitId]/${section}`, params: { visitId: visit.id } });
 
-  const info = <VisitInfoCard visit={visit} />;
+  const info = (
+    <View style={styles.column}>
+      {isEditable(visit) ? null : <ReadOnlyNotice message={READ_ONLY_MESSAGE} />}
+      <VisitInfoCard visit={visit} />
+    </View>
+  );
   const links = <SectionLinks statuses={statuses} onOpen={openSection} />;
 
   return (
@@ -107,7 +112,7 @@ const styles = StyleSheet.create({
   },
   content: {
     width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
+    maxWidth: contentWidths.list,
     alignSelf: 'center',
     gap: spacing.md,
   },
@@ -117,5 +122,8 @@ const styles = StyleSheet.create({
   },
   splitColumn: {
     flex: 1,
+  },
+  column: {
+    gap: spacing.md,
   },
 });

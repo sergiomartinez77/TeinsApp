@@ -90,6 +90,6 @@ El alias `@/` apunta a `src/`.
 - [x] Etapa 10 — Fotografías
 - [x] Etapa 11 — Anotaciones
 - [x] Etapa 12 — Resumen de visita
-- [ ] Etapa 13 — Validaciones y pulido
+- [x] Etapa 13 — Validaciones y pulido
 - [ ] Etapa 14 — Pruebas
 - [ ] Etapa 15 — Optimización y build

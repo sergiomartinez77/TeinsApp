@@ -69,6 +69,8 @@ export const colors = {
 
   // Fondo de modales (negro al 32 %)
   scrim: 'rgba(0, 0, 0, 0.32)',
+  // Sombra de los botones flotantes
+  shadow: '#000000',
 } as const;
 
 export type ColorToken = keyof typeof colors;

@@ -1,4 +1,5 @@
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon } from '@/components/ui';
 import { colors, radius, spacing } from '@/theme';
@@ -18,11 +19,16 @@ export function SectionChips({
   errorSectionIds = [],
   onSelect,
 }: SectionChipsProps) {
+  const insets = useSafeAreaInsets();
   return (
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.row}
+      contentContainerStyle={[
+        styles.row,
+        // En horizontal los chips no quedan bajo la muesca.
+        { paddingLeft: insets.left + spacing.md, paddingRight: insets.right + spacing.md },
+      ]}
       accessibilityRole="tablist"
       style={styles.scroll}
     >
@@ -66,7 +72,6 @@ const styles = StyleSheet.create({
   },
   row: {
     gap: spacing.sm,
-    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
   },
   chip: {

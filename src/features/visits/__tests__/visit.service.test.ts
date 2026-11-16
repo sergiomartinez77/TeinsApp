@@ -287,12 +287,27 @@ describe('consultas del listado', () => {
   });
 
   it('busca en título, cliente, dirección y tipo, usando parámetros', () => {
-    const query = buildVisitListQuery('t', { filter: 'assigned', search: '  almacén ', limit: 5 });
+    const query = buildVisitListQuery('t', { filter: 'assigned', search: '  almacen ', limit: 5 });
 
     expect(query.sql).toContain(
       "(title LIKE ? ESCAPE '\\' OR client_name LIKE ? ESCAPE '\\' OR address LIKE ? ESCAPE '\\' OR visit_type LIKE ? ESCAPE '\\')",
     );
-    expect(query.parameters).toEqual(['t', '%almacén%', '%almacén%', '%almacén%', '%almacén%', 5]);
+    expect(query.parameters).toEqual(['t', '%almacen%', '%almacen%', '%almacen%', '%almacen%', 5]);
+  });
+
+  it('con letras acentuadas busca también la variante en mayúsculas', () => {
+    const query = buildVisitListQuery('t', { filter: 'all', search: 'éxito', limit: 5 });
+
+    expect(query.sql).toContain("(title LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\' OR");
+    expect(query.parameters).toEqual([
+      't',
+      ...['title', 'client_name', 'address', 'visit_type'].flatMap(() => ['%éxito%', '%ÉXITO%']),
+      5,
+    ]);
+    // "ÉXITO" escrito en mayúsculas encuentra el registro guardado como "éxito".
+    expect(
+      buildVisitListQuery('t', { filter: 'all', search: 'ÉXITO', limit: 5 }).parameters,
+    ).toContain('%éxito%');
   });
 
   it('encuentra por el nombre visible del tipo de visita', () => {

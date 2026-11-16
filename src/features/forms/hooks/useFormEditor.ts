@@ -7,6 +7,7 @@ import { Alert } from 'react-native';
 
 import type { FormResponse, FormTemplate, FormValues } from '@/models/form.model';
 import type { AppError } from '@/types/errors';
+import { unwrapResult, userErrorMessage } from '@/utils/result.utils';
 
 import {
   buildFormSchema,
@@ -91,13 +92,11 @@ export function useFormEditor({
       // espera a que termine el que esté en curso.
       cancel();
       await flush();
-      const result = await completeFormResponse(db, toInput(draft));
-      if (!result.ok) throw result.error;
-      return result.data;
+      return unwrapResult(completeFormResponse(db, toInput(draft)));
     },
     onError: (error) => {
       schedule({ ...getValues() });
-      Alert.alert('No se pudo completar el formulario', error.message);
+      Alert.alert('No se pudo completar el formulario', userErrorMessage(error));
     },
   });
 

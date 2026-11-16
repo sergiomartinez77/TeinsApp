@@ -34,8 +34,19 @@ export const breakpoints = {
   splitView: 700,
 } as const;
 
-/** Ancho máximo del contenido centrado en tablet (login, formularios). */
-export const maxContentWidth = 480;
+/** Anchos máximos (dp) del contenido centrado en tablet y en horizontal. */
+export const contentWidths = {
+  /** Login, diálogos, mensajes y estados vacíos. */
+  narrow: 480,
+  /** Hoja inferior (p. ej. "Agregar material"). */
+  sheet: 640,
+  /** Formulario técnico y selector de plantilla. */
+  form: 720,
+  /** Dashboard, listados y resumen. */
+  list: 840,
+  /** Detalle de visita en vista dividida. */
+  wide: 1100,
+} as const;
 
 export function isTabletWidth(width: number): boolean {
   return width > breakpoints.tablet;

@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { colors, maxContentWidth, spacing } from '@/theme';
+import { colors, contentWidths, spacing } from '@/theme';
 
 import { AppText } from './AppText';
 import { Icon, type IconName } from './Icon';
@@ -40,6 +40,6 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     gap: spacing.sm,
     padding: spacing.lg,
-    maxWidth: maxContentWidth,
+    maxWidth: contentWidths.narrow,
   },
 });

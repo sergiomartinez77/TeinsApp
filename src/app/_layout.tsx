@@ -1,13 +1,20 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Stack } from 'expo-router';
+import { Stack, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { AppErrorScreen } from '@/components/layout/AppErrorScreen';
 import { useSessionBootstrap } from '@/features/auth/hooks/useSessionBootstrap';
+import { clearQueryCacheOnSessionChange } from '@/features/auth/session-query-cache';
 import { colors } from '@/theme';
+
+/** Pantalla de error global: cualquier fallo no controlado de la interfaz llega aquí. */
+export function ErrorBoundary(props: ErrorBoundaryProps) {
+  return <AppErrorScreen {...props} />;
+}
 
 /** Layout raíz: proveedores globales, arranque de sesión y navegador principal. */
 export default function RootLayout() {
@@ -17,6 +24,8 @@ export default function RootLayout() {
   );
 
   useSessionBootstrap();
+  // Al cerrar sesión o cambiar de usuario o de modo se vacía la caché de consultas.
+  useEffect(() => clearQueryCacheOnSessionChange(queryClient), [queryClient]);
 
   return (
     <GestureHandlerRootView style={styles.root}>

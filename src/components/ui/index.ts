@@ -11,10 +11,12 @@ export {
 } from './ConnectivityBanner';
 export { Dialog, type DialogProps } from './Dialog';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
-export { Fab, type FabProps } from './Fab';
+export { ErrorMessage, type ErrorMessageProps } from './ErrorMessage';
+export { Fab, FAB_CLEARANCE, type FabProps } from './Fab';
 export { Select, type SelectOption, type SelectProps } from './Select';
 export { ErrorScreen, type ErrorScreenProps } from './ErrorScreen';
 export { Icon, type IconName, type IconProps } from './Icon';
 export { IconButton, type IconButtonProps } from './IconButton';
 export { Input, type InputProps } from './Input';
 export { LoadingScreen, type LoadingScreenProps } from './LoadingScreen';
+export { ReadOnlyNotice, type ReadOnlyNoticeProps } from './ReadOnlyNotice';

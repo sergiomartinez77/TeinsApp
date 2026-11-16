@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText, Icon } from '@/components/ui';
 import { LoginForm } from '@/features/auth/components/LoginForm';
 import { useAuthStore } from '@/store/auth.store';
-import { colors, maxContentWidth, radius, spacing } from '@/theme';
+import { colors, contentWidths, radius, spacing } from '@/theme';
 
 /** Ruta `/login`. En tablet el formulario queda centrado con ancho máximo de 480dp. */
 export default function LoginScreen() {
@@ -75,7 +75,7 @@ const styles = StyleSheet.create({
   },
   content: {
     width: '100%',
-    maxWidth: maxContentWidth,
+    maxWidth: contentWidths.narrow,
     alignSelf: 'center',
     gap: spacing.xl,
   },

@@ -1,4 +1,4 @@
-import { escapeLike, type SqlQuery } from '@/utils/sql.utils';
+import { containsAnyCondition, type SqlQuery } from '@/utils/sql.utils';
 
 /**
  * Consultas SQL de materiales.
@@ -19,9 +19,10 @@ export function buildCatalogQuery(options: CatalogQueryOptions): SqlQuery {
 
   const search = options.search.trim();
   if (search) {
-    const pattern = `%${escapeLike(search)}%`;
-    conditions.push("(code LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\')");
-    parameters.push(pattern, pattern);
+    // Ignora mayúsculas también en letras acentuadas ("CAÑERÍA" encuentra "cañería").
+    const text = containsAnyCondition(['code', 'name'], search);
+    conditions.push(`(${text.sql})`);
+    parameters.push(...text.parameters);
   }
 
   parameters.push(options.limit);

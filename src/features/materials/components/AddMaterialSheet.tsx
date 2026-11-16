@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppText, Badge, Button, Card, Dialog, Icon, Input } from '@/components/ui';
+import { AppText, Badge, Button, Card, Dialog, ErrorMessage, Icon, Input } from '@/components/ui';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
 import type { CatalogMaterial } from '@/models/material.model';
 import { colors, radius, spacing } from '@/theme';
@@ -17,8 +17,6 @@ import {
   type MaterialEntryFormValues,
   type MaterialEntryInput,
 } from '../validation';
-
-import { SaveErrorBox } from './SaveErrorBox';
 
 export const SEARCH_DEBOUNCE_MS = 250;
 
@@ -142,7 +140,7 @@ export function AddMaterialSheet({
             )}
           />
 
-          {error ? <SaveErrorBox message={error} /> : null}
+          {error ? <ErrorMessage message={error} /> : null}
         </>
       ) : (
         <CatalogPicker

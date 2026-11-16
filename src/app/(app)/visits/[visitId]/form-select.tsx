@@ -20,10 +20,8 @@ import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import { isEditable } from '@/models/visit.model';
-import { colors, spacing } from '@/theme';
+import { colors, contentWidths, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
-
-const CONTENT_MAX_WIDTH = 720;
 
 /**
  * Ruta `/visits/[visitId]/form-select` — elige la plantilla del formulario.
@@ -126,7 +124,7 @@ const styles = StyleSheet.create({
   list: {
     flexGrow: 1,
     width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
+    maxWidth: contentWidths.form,
     alignSelf: 'center',
     gap: spacing.listItemSpacing,
     paddingTop: spacing.screenVertical,
