@@ -9,6 +9,15 @@ export const VISIT_PHOTOS_SQL =
 /** Total de fotos de la visita (para el subtítulo y el contador del visor). */
 export const VISIT_PHOTO_COUNT_SQL = 'SELECT COUNT(*) AS count FROM photos WHERE visit_id = ?';
 
+/**
+ * Total de fotos de una visita del técnico y cuántas faltan por subir
+ * (mismos estados que `PENDING_UPLOAD_STATUSES`). Para el resumen de la visita.
+ */
+export const VISIT_PHOTO_STATS_SQL = `SELECT COUNT(*) AS total,
+  COALESCE(SUM(CASE WHEN sync_status IN ('local', 'pendingUpload', 'uploadError') THEN 1 ELSE 0 END), 0) AS pending
+FROM photos
+WHERE visit_id = ? AND visit_id IN (SELECT id FROM visits WHERE technician_id = ?)`;
+
 /** Visita del técnico: para no escribir en visitas ajenas o cerradas. */
 export const OWN_VISIT_SQL =
   'SELECT id, status FROM visits WHERE id = ? AND technician_id = ? LIMIT 1';
