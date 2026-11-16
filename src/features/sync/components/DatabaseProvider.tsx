@@ -3,6 +3,7 @@ import type { PowerSyncDatabase } from '@powersync/react-native';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { ErrorScreen, LoadingScreen } from '@/components/ui';
+import { purgePhotoTrash } from '@/features/photos/services/photo-trash';
 import { startPhotoUploader } from '@/features/photos/services/photo-uploader';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 import { scopedLogger } from '@/utils/logger';
@@ -35,6 +36,7 @@ export function DatabaseProvider({ userId, isDemo, children }: DatabaseProviderP
     let active = true;
     let stopMonitor: (() => void) | null = null;
     let stopUploader: (() => void) | null = null;
+    let purgeTimer: ReturnType<typeof setTimeout> | null = null;
 
     prepareSessionDatabase(userId, isDemo)
       .then((db) => {
@@ -42,6 +44,9 @@ export function DatabaseProvider({ userId, isDemo, children }: DatabaseProviderP
         stopMonitor = startSyncMonitor(db, { isDemo });
         // Las fotos solo se suben en la sesión real: en modo demo se quedan en el dispositivo.
         if (!isDemo) stopUploader = startPhotoUploader(db, userId);
+        // Una vez por sesión (real o demo) se vacía lo caducado de la papelera de
+        // fotos, después de mostrar la interfaz. Nunca lanza: los fallos van al log.
+        purgeTimer = setTimeout(() => void purgePhotoTrash(), 0);
         setState({ phase: 'ready', db });
       })
       .catch((error: unknown) => {
@@ -53,6 +58,7 @@ export function DatabaseProvider({ userId, isDemo, children }: DatabaseProviderP
       active = false;
       stopMonitor?.();
       stopUploader?.();
+      if (purgeTimer !== null) clearTimeout(purgeTimer);
       void releaseSessionDatabase().catch((error: unknown) =>
         log.warn('No se pudo cerrar la base de datos local', error),
       );

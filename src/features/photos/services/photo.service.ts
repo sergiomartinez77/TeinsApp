@@ -6,6 +6,7 @@ import { generateId } from '@/utils/uuid.utils';
 
 import type { CompressedImage } from './photo-capture';
 import { photoRelativePath, type PhotoFileSystem } from './photo-files';
+import { photoTrashName } from './photo-trash';
 import {
   DELETE_PHOTO_SQL,
   INSERT_PHOTO_SQL,
@@ -148,16 +149,21 @@ export async function addPhoto(
 /**
  * Elimina una fotografía de la visita (borra la fila).
  *
- * REGLA CRÍTICA: el archivo local SOLO se borra si la foto estaba `uploaded`.
- * Si no estaba subida (`local`, `pendingUpload`, `uploading`, `uploadError`),
- * el archivo se conserva en el dispositivo. El objeto remoto no se toca: solo
- * un administrador puede borrarlo.
+ * Solo DESPUÉS de confirmar el borrado de la fila se toca el archivo local
+ * (si la transacción falla, el archivo queda intacto):
+ * - Foto `uploaded`: el archivo se borra (la copia está en el servidor).
+ * - Cualquier otro estado: el archivo se mueve a la papelera temporal de la
+ *   caché (`teins_photos_trash/<epochMs>_<id>.jpg`), que se vacía a los 7 días
+ *   (`purgePhotoTrash`) o antes si el sistema necesita espacio.
+ * Un fallo con el archivo no es un error para el técnico: solo se registra.
+ * El objeto remoto no se toca: solo un administrador puede borrarlo.
  */
 export async function deletePhoto(
   db: PhotoDatabase,
   files: PhotoFileSystem,
   technicianId: string,
   input: DeletePhotoInput,
+  now: Date = new Date(),
 ): Promise<Result<void>> {
   let deleted: VisitPhoto;
   try {
@@ -175,13 +181,16 @@ export async function deletePhoto(
     return failure(error, 'No se pudo eliminar la fotografía');
   }
 
-  if (deleted.syncStatus === 'uploaded' && deleted.localPath) {
-    try {
+  if (!deleted.localPath) return ok(undefined);
+  try {
+    if (deleted.syncStatus === 'uploaded') {
       await files.remove(deleted.localPath);
-    } catch (error) {
-      // La fila ya no existe: un archivo sobrante no afecta al técnico.
-      log.warn('No se pudo borrar el archivo de una foto eliminada', error);
+    } else {
+      await files.moveToTrash(deleted.localPath, photoTrashName(deleted.id, now));
     }
+  } catch (error) {
+    // La fila ya no existe: un archivo sobrante o ausente no afecta al técnico.
+    log.warn('No se pudo retirar el archivo de una foto eliminada', error);
   }
   return ok(undefined);
 }

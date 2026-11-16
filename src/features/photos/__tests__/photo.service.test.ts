@@ -102,23 +102,33 @@ describe('addPhoto', () => {
 
 describe('deletePhoto', () => {
   const PATH = 'teins_photos/p1.jpg';
+  const DELETED_AT = new Date('2026-06-03T09:30:00.000Z');
+  const TRASH_NAME = `${DELETED_AT.getTime()}_p1.jpg`;
 
   it.each<PhotoSyncStatus>(['local', 'pendingUpload', 'uploadError', 'uploading'])(
-    'con estado %s borra la fila y CONSERVA el archivo local',
+    'con estado %s borra la fila y mueve el archivo a la papelera',
     async (status) => {
       const { db, photos } = createPhotoDb({ photos: [photoRow({ sync_status: status })] });
-      const { files, stored } = createFakeFiles({ [PATH]: 1000 });
+      const { files, stored, trash } = createFakeFiles({ [PATH]: 1000 });
 
-      const result = await deletePhoto(db, files, 't1', { visitId: 'v1', photoId: 'p1' });
+      const result = await deletePhoto(
+        db,
+        files,
+        't1',
+        { visitId: 'v1', photoId: 'p1' },
+        DELETED_AT,
+      );
 
       expect(result.ok).toBe(true);
       expect(photos().has('p1')).toBe(false);
       expect(files.remove).not.toHaveBeenCalled();
-      expect(stored.has(PATH)).toBe(true);
+      expect(files.moveToTrash).toHaveBeenCalledWith(PATH, TRASH_NAME);
+      expect(stored.has(PATH)).toBe(false);
+      expect([...trash.keys()]).toEqual([TRASH_NAME]);
     },
   );
 
-  it('con estado uploaded borra la fila y el archivo local', async () => {
+  it('con estado uploaded borra la fila y el archivo, sin pasar por la papelera', async () => {
     const { db, photos } = createPhotoDb({
       photos: [
         photoRow({
@@ -128,14 +138,46 @@ describe('deletePhoto', () => {
         }),
       ],
     });
-    const { files, stored } = createFakeFiles({ [PATH]: 1000 });
+    const { files, stored, trash } = createFakeFiles({ [PATH]: 1000 });
 
-    const result = await deletePhoto(db, files, 't1', { visitId: 'v1', photoId: 'p1' });
+    const result = await deletePhoto(db, files, 't1', { visitId: 'v1', photoId: 'p1' }, DELETED_AT);
 
     expect(result.ok).toBe(true);
     expect(photos().has('p1')).toBe(false);
     expect(files.remove).toHaveBeenCalledWith(PATH);
+    expect(files.moveToTrash).not.toHaveBeenCalled();
     expect(stored.has(PATH)).toBe(false);
+    expect(trash.size).toBe(0);
+  });
+
+  it('si mover a la papelera falla, la foto se elimina igualmente', async () => {
+    const { db, photos } = createPhotoDb({ photos: [photoRow({ sync_status: 'local' })] });
+    // El archivo ya no existe: mover lanza.
+    const { files, trash } = createFakeFiles({});
+
+    const result = await deletePhoto(db, files, 't1', { visitId: 'v1', photoId: 'p1' }, DELETED_AT);
+
+    expect(result).toEqual({ ok: true, data: undefined });
+    expect(files.moveToTrash).toHaveBeenCalledTimes(1);
+    expect(photos().has('p1')).toBe(false);
+    expect(trash.size).toBe(0);
+  });
+
+  it('si la transacción falla, el archivo queda intacto y nada va a la papelera', async () => {
+    const { db, photos, failNextWrite } = createPhotoDb({
+      photos: [photoRow({ sync_status: 'local' })],
+    });
+    const { files, stored, trash } = createFakeFiles({ [PATH]: 1000 });
+    failNextWrite(new Error('base bloqueada'));
+
+    const result = await deletePhoto(db, files, 't1', { visitId: 'v1', photoId: 'p1' }, DELETED_AT);
+
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ kind: 'database' }) });
+    expect(photos().has('p1')).toBe(true);
+    expect(stored.has(PATH)).toBe(true);
+    expect(trash.size).toBe(0);
+    expect(files.moveToTrash).not.toHaveBeenCalled();
+    expect(files.remove).not.toHaveBeenCalled();
   });
 
   it('en una visita cerrada no borra nada', async () => {
@@ -143,7 +185,7 @@ describe('deletePhoto', () => {
       visits: [visitRow({ status: 'synced' })],
       photos: [photoRow({ sync_status: 'uploaded' })],
     });
-    const { files, stored } = createFakeFiles({ [PATH]: 1000 });
+    const { files, stored, trash } = createFakeFiles({ [PATH]: 1000 });
 
     const result = await deletePhoto(db, files, 't1', { visitId: 'v1', photoId: 'p1' });
 
@@ -153,6 +195,7 @@ describe('deletePhoto', () => {
     });
     expect(photos().has('p1')).toBe(true);
     expect(stored.has(PATH)).toBe(true);
+    expect(trash.size).toBe(0);
   });
 
   it('avisa si la foto ya no existe', async () => {

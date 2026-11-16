@@ -20,6 +20,11 @@ export interface PhotoFileSystem {
   /** Borra el archivo; no falla si ya no existe. */
   remove: (relativePath: string) => Promise<void>;
   exists: (relativePath: string) => boolean;
+  /**
+   * Mueve el archivo a la papelera temporal (`<caché>/teins_photos_trash/<nombre>`),
+   * creando la carpeta si no existe. Lanza si no se puede mover.
+   */
+  moveToTrash: (relativePath: string, trashName: string) => Promise<void>;
   /** Contenido del archivo, para subirlo. */
   read: (relativePath: string) => Promise<ArrayBuffer>;
   /** URI absoluta (`file://…`) para mostrar el archivo. */
@@ -32,6 +37,9 @@ export function photoRelativePath(photoId: string): string {
 }
 
 const fileAt = (relativePath: string) => new File(Paths.document, relativePath);
+
+/** Carpeta de la papelera temporal, dentro de la caché de la app. */
+export const photoTrashDirectory = () => new Directory(Paths.cache, PHOTOS.trashDirectory);
 
 /** Sistema de archivos real del dispositivo. */
 export const devicePhotoFiles: PhotoFileSystem = {
@@ -46,6 +54,11 @@ export const devicePhotoFiles: PhotoFileSystem = {
   remove: async (relativePath) => {
     const file = fileAt(relativePath);
     if (file.exists) file.delete();
+  },
+  moveToTrash: async (relativePath, trashName) => {
+    const trash = photoTrashDirectory();
+    trash.create({ intermediates: true, idempotent: true });
+    await fileAt(relativePath).move(new File(trash, trashName), { overwrite: true });
   },
   exists: (relativePath) => relativePath.length > 0 && fileAt(relativePath).exists,
   read: (relativePath) => fileAt(relativePath).arrayBuffer(),

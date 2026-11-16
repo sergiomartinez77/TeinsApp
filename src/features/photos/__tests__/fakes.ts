@@ -111,12 +111,17 @@ export function createPhotoDb({
   };
 }
 
-/** Sistema de archivos falso: rutas relativas → tamaño en bytes. */
+/**
+ * Sistema de archivos falso: rutas relativas → tamaño en bytes, más la
+ * papelera temporal (nombre → tamaño).
+ */
 export function createFakeFiles(initial: Record<string, number> = {}) {
   const stored = new Map<string, number>(Object.entries(initial));
+  const trash = new Map<string, number>();
   const files: PhotoFileSystem & {
     save: jest.Mock;
     remove: jest.Mock;
+    moveToTrash: jest.Mock;
     read: jest.Mock;
   } = {
     save: jest.fn(async (_sourceUri: string, relativePath: string) => {
@@ -126,9 +131,15 @@ export function createFakeFiles(initial: Record<string, number> = {}) {
     remove: jest.fn(async (relativePath: string) => {
       stored.delete(relativePath);
     }),
+    moveToTrash: jest.fn(async (relativePath: string, trashName: string) => {
+      const size = stored.get(relativePath);
+      if (size === undefined) throw new Error('El archivo no existe');
+      stored.delete(relativePath);
+      trash.set(trashName, size);
+    }),
     exists: (relativePath: string) => stored.has(relativePath),
     read: jest.fn(async () => new ArrayBuffer(8)),
     absoluteUri: (relativePath: string) => `file:///documentos/${relativePath}`,
   };
-  return { files, stored };
+  return { files, stored, trash };
 }

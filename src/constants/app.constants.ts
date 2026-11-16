@@ -38,6 +38,13 @@ export const PHOTOS = {
   maxBytes: 5 * 1024 * 1024,
   /** Carpeta dentro del directorio de documentos de la app. */
   localDirectory: 'teins_photos',
+  /**
+   * Papelera temporal (dentro de la caché) para los archivos de fotos
+   * eliminadas que no estaban subidas. El sistema puede vaciarla antes.
+   */
+  trashDirectory: 'teins_photos_trash',
+  /** Días que un archivo permanece en la papelera antes de borrarse. */
+  trashRetentionDays: 7,
   bucket: 'visit-photos',
   thumbnailWidth: 300,
 } as const;
