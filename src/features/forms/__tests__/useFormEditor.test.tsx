@@ -51,7 +51,13 @@ interface HarnessProps {
 
 /** Pantalla mínima: la sección activa con sus campos reales y el botón de completar. */
 function Harness({ readOnly = false, initialValues = {} }: HarnessProps) {
-  const editor = useFormEditor({ visitId: 'v1', template, initialValues, readOnly });
+  const editor = useFormEditor({
+    visitId: 'v1',
+    technicianId: 't1',
+    template,
+    initialValues,
+    readOnly,
+  });
   const section = template.sections[editor.sectionIndex];
 
   return (

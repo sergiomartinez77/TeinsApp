@@ -114,6 +114,7 @@ function FormEditor({ visit, template, response, isOnline }: FormEditorProps) {
 
   const editor = useFormEditor({
     visitId: visit.id,
+    technicianId: visit.technicianId,
     template,
     initialValues: response?.values ?? {},
     readOnly,

@@ -22,6 +22,8 @@ import { useAutosave } from './useAutosave';
 
 export interface UseFormEditorOptions {
   visitId: string;
+  /** Técnico de la sesión: solo se escribe en sus propias visitas. */
+  technicianId: string;
   template: FormTemplate;
   /** Respuestas ya guardadas; solo se usan al abrir el formulario. */
   initialValues: FormValues;
@@ -36,6 +38,7 @@ export interface UseFormEditorOptions {
  */
 export function useFormEditor({
   visitId,
+  technicianId,
   template,
   initialValues,
   readOnly,
@@ -63,8 +66,8 @@ export function useFormEditor({
   );
 
   const save = useCallback(
-    async (draft: FormDraft) => (await saveFormResponse(db, toInput(draft))).ok,
-    [db, toInput],
+    async (draft: FormDraft) => (await saveFormResponse(db, technicianId, toInput(draft))).ok,
+    [db, technicianId, toInput],
   );
   const { status, schedule, flush, cancel } = useAutosave<FormDraft>({ save });
 
@@ -92,7 +95,7 @@ export function useFormEditor({
       // espera a que termine el que esté en curso.
       cancel();
       await flush();
-      return unwrapResult(completeFormResponse(db, toInput(draft)));
+      return unwrapResult(completeFormResponse(db, technicianId, toInput(draft)));
     },
     onError: (error) => {
       schedule({ ...getValues() });

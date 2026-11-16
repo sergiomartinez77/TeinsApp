@@ -1,6 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { needsRefresh, SupabaseConnector, type SessionLike } from '../powersync/connector';
+import {
+  createSupabaseWriter,
+  needsRefresh,
+  SupabaseConnector,
+  type SessionLike,
+} from '../powersync/connector';
 
 const NOW = Date.parse('2026-01-15T12:00:00Z');
 const inSeconds = (seconds: number) => Math.floor(NOW / 1000) + seconds;
@@ -102,5 +107,49 @@ describe('SupabaseConnector.fetchCredentials', () => {
     await expect(new SupabaseConnector(client, ENDPOINT).fetchCredentials()).rejects.toThrow(
       'lectura',
     );
+  });
+});
+
+describe('createSupabaseWriter', () => {
+  function fakeSupabase(error: { code: string; message: string } | null = null) {
+    const calls: unknown[][] = [];
+    const chain = (operation: string, ...args: unknown[]) => ({
+      eq: async (column: string, value: unknown) => {
+        calls.push([operation, ...args, column, value]);
+        return { error };
+      },
+    });
+    const client = {
+      from: (table: string) => ({
+        upsert: async (row: unknown) => {
+          calls.push(['upsert', table, row]);
+          return { error };
+        },
+        update: (changes: unknown) => chain('update', table, changes),
+        delete: () => chain('delete', table),
+      }),
+    } as unknown as SupabaseClient;
+    return { client, calls };
+  }
+
+  it('traduce upsert, update y delete a PostgREST filtrando por id', async () => {
+    const { client, calls } = fakeSupabase();
+    const writer = createSupabaseWriter(client);
+
+    expect(await writer.upsert('visits', { id: 'v1', title: 'T' })).toEqual({ error: null });
+    expect(await writer.update('visits', 'v1', { title: 'U' })).toEqual({ error: null });
+    expect(await writer.remove('visit_materials', 'm1')).toEqual({ error: null });
+    expect(calls).toEqual([
+      ['upsert', 'visits', { id: 'v1', title: 'T' }],
+      ['update', 'visits', { title: 'U' }, 'id', 'v1'],
+      ['delete', 'visit_materials', 'id', 'm1'],
+    ]);
+  });
+
+  it('devuelve el error del servidor sin lanzar', async () => {
+    const rejected = { code: '42501', message: 'sin permiso' };
+    const writer = createSupabaseWriter(fakeSupabase(rejected).client);
+    expect(await writer.update('visits', 'v1', {})).toEqual({ error: rejected });
+    expect(await writer.remove('visits', 'v1')).toEqual({ error: rejected });
   });
 });

@@ -7,7 +7,7 @@ El backend (Supabase + PowerSync) es el mismo de la app original y no se modific
 
 ## Requisitos
 
-- Node.js 20 o superior
+- Node.js 20 o superior para la app; **Node.js 22.13 o superior para los tests** (usan el módulo integrado `node:sqlite`; probado con Node 24)
 - Android Studio (SDK + emulador) para compilar en Android
 - macOS + Xcode, o EAS Build, para compilar en iOS
 
@@ -44,8 +44,18 @@ se ejecuta con un *development build* (`expo-dev-client`).
 | `npm run android` / `npm run ios` | Compila y ejecuta la app nativa |
 | `npm run typecheck` | Comprobación de tipos (TypeScript estricto) |
 | `npm run lint` | ESLint + Prettier |
-| `npm test` | Tests unitarios (Jest) |
+| `npm test` | Tests unitarios y de integración (Jest) |
+| `npm run test:coverage` | Tests con informe de cobertura y umbrales mínimos |
 | `npm run check` | Tipos + lint + tests |
+
+## Pruebas
+
+- `npm test` ejecuta los tests unitarios y de integración. Las consultas SQL y los
+  servicios se prueban contra una base **SQLite real en memoria** (`node:sqlite` de
+  Node 24) creada a partir del esquema de la app (`src/test-utils/test-database.ts`).
+- `npm run test:coverage` exige cobertura mínima (ver `coverageThreshold` en `jest.config.js`).
+- Lo que no se puede verificar fuera de un dispositivo o sin backend está en la guía
+  [Pruebas manuales en dispositivo](docs/PRUEBAS_MANUALES.md).
 
 ## Variables de entorno
 
@@ -91,5 +101,5 @@ El alias `@/` apunta a `src/`.
 - [x] Etapa 11 — Anotaciones
 - [x] Etapa 12 — Resumen de visita
 - [x] Etapa 13 — Validaciones y pulido
-- [ ] Etapa 14 — Pruebas
+- [x] Etapa 14 — Pruebas
 - [ ] Etapa 15 — Optimización y build

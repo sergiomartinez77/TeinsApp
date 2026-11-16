@@ -42,6 +42,7 @@ describe('saveFormResponse', () => {
 
     const result = await saveFormResponse(
       db,
+      't1',
       { visitId: 'v1', template: DB_TEMPLATE, values: { cliente: 'ABC', cantidad: 2 } },
       T1,
     );
@@ -67,8 +68,8 @@ describe('saveFormResponse', () => {
     const { db, rows, statements } = createDb();
     const input = { visitId: 'v1', template: DB_TEMPLATE, values: { cliente: 'ABC' } };
 
-    await saveFormResponse(db, input, T1);
-    const second = await saveFormResponse(db, { ...input, values: { cliente: 'XYZ' } }, T2);
+    await saveFormResponse(db, 't1', input, T1);
+    const second = await saveFormResponse(db, 't1', { ...input, values: { cliente: 'XYZ' } }, T2);
 
     expect(rows.size).toBe(1);
     expect(statements.filter((sql) => sql.includes('INSERT'))).toHaveLength(1);
@@ -87,6 +88,7 @@ describe('saveFormResponse', () => {
 
     const result = await saveFormResponse(
       db,
+      't1',
       { visitId: 'v1', template: ASSET_TEMPLATE, values: { equipo: 'UPS 10 kVA' } },
       T1,
     );
@@ -108,6 +110,7 @@ describe('saveFormResponse', () => {
 
     await saveFormResponse(
       db,
+      't1',
       { visitId: 'v1', template: DB_TEMPLATE, values: { [TEMPLATE_KEY]: 'intruso', a: 'b' } },
       T1,
     );
@@ -122,6 +125,7 @@ describe('saveFormResponse', () => {
 
     const result = await saveFormResponse(
       db,
+      't1',
       { visitId: 'v1', template: DB_TEMPLATE, values: { a: 'b' } },
       T1,
     );
@@ -135,9 +139,9 @@ describe('completeFormResponse', () => {
   it('marca is_complete y completed_at', async () => {
     const { db, rows } = createDb();
     const input = { visitId: 'v1', template: DB_TEMPLATE, values: { a: 'b' } };
-    await saveFormResponse(db, input, T1);
+    await saveFormResponse(db, 't1', input, T1);
 
-    const result = await completeFormResponse(db, input, T2);
+    const result = await completeFormResponse(db, 't1', input, T2);
 
     expect(result).toMatchObject({
       ok: true,
@@ -154,7 +158,7 @@ describe('completeFormResponse', () => {
   it('puede completar en el primer guardado', async () => {
     const { db, rows } = createDb();
 
-    await completeFormResponse(db, { visitId: 'v1', template: DB_TEMPLATE, values: {} }, T1);
+    await completeFormResponse(db, 't1', { visitId: 'v1', template: DB_TEMPLATE, values: {} }, T1);
 
     expect(rows.get('respuesta-1')).toMatchObject({
       is_complete: 1,
@@ -165,9 +169,9 @@ describe('completeFormResponse', () => {
   it('no modifica un formulario ya completado', async () => {
     const { db, rows } = createDb();
     const input = { visitId: 'v1', template: DB_TEMPLATE, values: { a: 'b' } };
-    await completeFormResponse(db, input, T1);
+    await completeFormResponse(db, 't1', input, T1);
 
-    const result = await saveFormResponse(db, { ...input, values: { a: 'cambio' } }, T2);
+    const result = await saveFormResponse(db, 't1', { ...input, values: { a: 'cambio' } }, T2);
 
     expect(result).toMatchObject({
       ok: false,
@@ -179,10 +183,10 @@ describe('completeFormResponse', () => {
   it('si falla al completar, la fila sigue sin completar', async () => {
     const { db, rows, failNextWrite } = createDb();
     const input = { visitId: 'v1', template: DB_TEMPLATE, values: { a: 'b' } };
-    await saveFormResponse(db, input, T1);
+    await saveFormResponse(db, 't1', input, T1);
     failNextWrite(new Error('bloqueo'));
 
-    const result = await completeFormResponse(db, input, T2);
+    const result = await completeFormResponse(db, 't1', input, T2);
 
     expect(result).toMatchObject({ ok: false, error: { kind: 'database' } });
     expect(rows.get('respuesta-1')).toMatchObject({ is_complete: 0, completed_at: null });
@@ -193,7 +197,7 @@ describe('registro de la plantilla en la visita', () => {
   it('con plantilla de la base, el primer guardado registra id y versión en la visita', async () => {
     const { db, visits } = createDb();
 
-    await saveFormResponse(db, { visitId: 'v1', template: DB_TEMPLATE, values: {} }, T1);
+    await saveFormResponse(db, 't1', { visitId: 'v1', template: DB_TEMPLATE, values: {} }, T1);
 
     expect(visits.get('v1')).toMatchObject({
       form_template_id: DB_TEMPLATE.id,
@@ -206,7 +210,7 @@ describe('registro de la plantilla en la visita', () => {
   it('con plantilla del asset solo registra la versión (form_template_id sigue nulo)', async () => {
     const { db, visits } = createDb();
 
-    await saveFormResponse(db, { visitId: 'v1', template: ASSET_TEMPLATE, values: {} }, T1);
+    await saveFormResponse(db, 't1', { visitId: 'v1', template: ASSET_TEMPLATE, values: {} }, T1);
 
     expect(visits.get('v1')).toMatchObject({
       form_template_id: null,
@@ -219,10 +223,10 @@ describe('registro de la plantilla en la visita', () => {
   it('los guardados posteriores no vuelven a tocar la visita', async () => {
     const { db, visits, statements } = createDb();
     const input = { visitId: 'v1', template: DB_TEMPLATE, values: { a: 'b' } };
-    await saveFormResponse(db, input, T1);
+    await saveFormResponse(db, 't1', input, T1);
 
-    await saveFormResponse(db, input, T2);
-    await completeFormResponse(db, input, T2);
+    await saveFormResponse(db, 't1', input, T2);
+    await completeFormResponse(db, 't1', input, T2);
 
     expect(statements.filter((sql) => sql.includes('UPDATE visits'))).toHaveLength(1);
     expect(visits.get('v1')?.updated_at).toBe('2026-06-01T10:00:00.000Z');
@@ -234,6 +238,7 @@ describe('registro de la plantilla en la visita', () => {
 
     const result = await saveFormResponse(
       db,
+      't1',
       { visitId: 'v1', template: DB_TEMPLATE, values: {} },
       T1,
     );
@@ -252,7 +257,7 @@ describe('visita cerrada', () => {
       const input = { visitId: 'v1', template: DB_TEMPLATE, values: { a: 'b' } };
 
       for (const write of [saveFormResponse, completeFormResponse]) {
-        expect(await write(db, input, T1)).toMatchObject({
+        expect(await write(db, 't1', input, T1)).toMatchObject({
           ok: false,
           error: { kind: 'validation', message: RESPONSE_MESSAGES.visitClosed },
         });
@@ -278,6 +283,7 @@ describe('visita cerrada', () => {
 
     const result = await saveFormResponse(
       db,
+      't1',
       { visitId: 'v1', template: DB_TEMPLATE, values: { a: 'cambio' } },
       T1,
     );
@@ -293,6 +299,7 @@ describe('visita cerrada', () => {
       (
         await saveFormResponse(
           assigned.db,
+          't1',
           { visitId: 'v1', template: DB_TEMPLATE, values: {} },
           T1,
         )
@@ -301,7 +308,12 @@ describe('visita cerrada', () => {
 
     const missing = createDb({ visits: [] });
     expect(
-      await saveFormResponse(missing.db, { visitId: 'v1', template: DB_TEMPLATE, values: {} }, T1),
+      await saveFormResponse(
+        missing.db,
+        't1',
+        { visitId: 'v1', template: DB_TEMPLATE, values: {} },
+        T1,
+      ),
     ).toMatchObject({ ok: false, error: { kind: 'validation', code: 'not_found' } });
     expect(missing.statements).toHaveLength(0);
   });

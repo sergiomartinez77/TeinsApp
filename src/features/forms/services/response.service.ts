@@ -28,8 +28,11 @@ export interface FormResponseDatabase {
 export const RESPONSE_BY_VISIT_SQL =
   'SELECT * FROM form_responses WHERE visit_id = ? ORDER BY created_at ASC LIMIT 1';
 
-/** Estado de la visita, para no escribir sobre una visita cerrada. */
-const VISIT_STATUS_SQL = 'SELECT id, status FROM visits WHERE id = ? LIMIT 1';
+/**
+ * Visita del técnico y su estado: para no escribir en visitas ajenas o cerradas
+ * (igual que materiales, fotos y anotaciones).
+ */
+const OWN_VISIT_SQL = 'SELECT id, status FROM visits WHERE id = ? AND technician_id = ? LIMIT 1';
 
 export const RESPONSE_MESSAGES = {
   alreadyComplete: 'El formulario ya está completado y no se puede modificar.',
@@ -64,6 +67,7 @@ function serializeValues(input: SaveFormResponseInput): string {
 
 async function writeResponse(
   db: FormResponseDatabase,
+  technicianId: string,
   input: SaveFormResponseInput,
   complete: boolean,
   now: Date,
@@ -74,9 +78,10 @@ async function writeResponse(
 
   try {
     const row = await db.writeTransaction(async (tx) => {
-      // Solo se escribe en visitas abiertas (asignadas o en progreso).
-      const visit = await tx.getOptional<Record<string, unknown>>(VISIT_STATUS_SQL, [
+      // Solo se escribe en visitas del técnico que siguen abiertas (asignadas o en progreso).
+      const visit = await tx.getOptional<Record<string, unknown>>(OWN_VISIT_SQL, [
         input.visitId,
+        technicianId,
       ]);
       if (!visit) {
         throw new ResponseRuleError(
@@ -191,17 +196,19 @@ async function writeResponse(
  */
 export function saveFormResponse(
   db: FormResponseDatabase,
+  technicianId: string,
   input: SaveFormResponseInput,
   now: Date = new Date(),
 ): Promise<Result<FormResponse>> {
-  return writeResponse(db, input, false, now);
+  return writeResponse(db, technicianId, input, false, now);
 }
 
 /** Guarda las respuestas y marca el formulario como completado. */
 export function completeFormResponse(
   db: FormResponseDatabase,
+  technicianId: string,
   input: SaveFormResponseInput,
   now: Date = new Date(),
 ): Promise<Result<FormResponse>> {
-  return writeResponse(db, input, true, now);
+  return writeResponse(db, technicianId, input, true, now);
 }
