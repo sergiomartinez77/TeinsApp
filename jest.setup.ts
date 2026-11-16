@@ -25,3 +25,20 @@ jest.mock('expo-image-manipulator', () => ({
     }),
   },
 }));
+
+// ── Skia ─────────────────────────────────────────────────────────────────────
+// Simulador oficial de la librería (dibuja con CanvasKit). Solo funciona en los
+// archivos que usan `@jest-environment ./jest.skia-environment.js`.
+
+jest.mock('@shopify/react-native-skia', () => {
+  const canvasKit: unknown = Reflect.get(globalThis, 'CanvasKit');
+  if (!canvasKit) {
+    throw new Error(
+      'Skia necesita el entorno de tests "./jest.skia-environment.js" (comentario @jest-environment).',
+    );
+  }
+  const { Mock } = jest.requireActual<{ Mock: (kit: unknown) => unknown }>(
+    '@shopify/react-native-skia/lib/commonjs/mock',
+  );
+  return Mock(canvasKit);
+});
