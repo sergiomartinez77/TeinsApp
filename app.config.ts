@@ -41,6 +41,16 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-router',
     'expo-secure-store',
     '@react-native-community/datetimepicker',
+    'expo-image',
+    [
+      'expo-image-picker',
+      {
+        cameraPermission: 'TEINS necesita la cámara para tomar fotografías de la visita técnica.',
+        photosPermission: 'TEINS necesita acceso a tus fotos para adjuntarlas a la visita técnica.',
+        // No se graban vídeos: no hace falta el micrófono.
+        microphonePermission: false,
+      },
+    ],
     [
       'expo-splash-screen',
       {

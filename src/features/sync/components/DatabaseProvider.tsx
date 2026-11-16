@@ -3,6 +3,7 @@ import type { PowerSyncDatabase } from '@powersync/react-native';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { ErrorScreen, LoadingScreen } from '@/components/ui';
+import { startPhotoUploader } from '@/features/photos/services/photo-uploader';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 import { scopedLogger } from '@/utils/logger';
 
@@ -33,11 +34,14 @@ export function DatabaseProvider({ userId, isDemo, children }: DatabaseProviderP
   useEffect(() => {
     let active = true;
     let stopMonitor: (() => void) | null = null;
+    let stopUploader: (() => void) | null = null;
 
     prepareSessionDatabase(userId, isDemo)
       .then((db) => {
         if (!active) return;
         stopMonitor = startSyncMonitor(db, { isDemo });
+        // Las fotos solo se suben en la sesión real: en modo demo se quedan en el dispositivo.
+        if (!isDemo) stopUploader = startPhotoUploader(db, userId);
         setState({ phase: 'ready', db });
       })
       .catch((error: unknown) => {
@@ -48,6 +52,7 @@ export function DatabaseProvider({ userId, isDemo, children }: DatabaseProviderP
     return () => {
       active = false;
       stopMonitor?.();
+      stopUploader?.();
       void releaseSessionDatabase().catch((error: unknown) =>
         log.warn('No se pudo cerrar la base de datos local', error),
       );
