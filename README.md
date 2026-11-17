@@ -3,7 +3,8 @@
 Aplicación móvil offline-first para técnicos de campo de TEINS.
 React Native + TypeScript + Expo (SDK 58) + Expo Router. Android e iOS.
 
-El backend (Supabase + PowerSync) es el mismo de la app original y no se modifica.
+El backend (Supabase + PowerSync) está descrito como código en `supabase/` y `powersync/`.
+Para crearlo desde cero sigue [docs/BACKEND.md](docs/BACKEND.md).
 
 ## Requisitos
 
@@ -16,7 +17,7 @@ El backend (Supabase + PowerSync) es el mismo de la app original y no se modific
 Cómo compilar, instalar y publicar: [docs/COMPILACION.md](docs/COMPILACION.md).
 
 La app usa módulos nativos (PowerSync, Skia), por lo que **no funciona en Expo Go**:
-se ejecuta con un *development build* (`expo-dev-client`).
+se ejecuta con un _development build_ (`expo-dev-client`).
 
 ## Puesta en marcha
 
@@ -42,21 +43,27 @@ se ejecuta con un *development build* (`expo-dev-client`).
 
 ## Scripts
 
-| Script | Qué hace |
-|---|---|
-| `npm start` | Servidor de desarrollo (development build) |
-| `npm run android` / `npm run ios` | Compila y ejecuta la app nativa |
-| `npm run typecheck` | Comprobación de tipos (TypeScript estricto) |
-| `npm run lint` | ESLint + Prettier |
-| `npm test` | Tests unitarios y de integración (Jest) |
-| `npm run test:coverage` | Tests con informe de cobertura y umbrales mínimos |
-| `npm run check` | Tipos + lint + tests |
-| `npm run format` | Prettier sobre `src/`, la configuración y `docs/` |
-| `npm run prebuild:check` | Evalúa `app.config.ts` y ejecuta `expo-doctor` |
-| `npm run build:dev:android` / `build:dev:ios` | Development build en EAS (APK / iPhone registrado) |
-| `npm run build:dev:ios-simulator` | Development build para el simulador de iOS (solo Mac) |
-| `npm run build:preview:android` / `build:preview:ios` | Build interno para testers (`APP_ENV=staging`) |
-| `npm run build:prod:android` / `build:prod:ios` | Build de tienda: AAB / App Store (`APP_ENV=production`) |
+| Script                                                | Qué hace                                                |
+| ----------------------------------------------------- | ------------------------------------------------------- |
+| `npm start`                                           | Servidor de desarrollo (development build)              |
+| `npm run android` / `npm run ios`                     | Compila y ejecuta la app nativa                         |
+| `npm run typecheck`                                   | Comprobación de tipos (TypeScript estricto)             |
+| `npm run lint`                                        | ESLint + Prettier                                       |
+| `npm test`                                            | Tests unitarios y de integración (Jest)                 |
+| `npm run test:coverage`                               | Tests con informe de cobertura y umbrales mínimos       |
+| `npm run check`                                       | Tipos + lint + tests                                    |
+| `npm run format`                                      | Prettier sobre `src/`, la configuración y `docs/`       |
+| `npm run prebuild:check`                              | Evalúa `app.config.ts` y ejecuta `expo-doctor`          |
+| `npm run build:dev:android` / `build:dev:ios`         | Development build en EAS (APK / iPhone registrado)      |
+| `npm run build:dev:ios-simulator`                     | Development build para el simulador de iOS (solo Mac)   |
+| `npm run build:preview:android` / `build:preview:ios` | Build interno para testers (`APP_ENV=staging`)          |
+| `npm run build:prod:android` / `build:prod:ios`       | Build de tienda: AAB / App Store (`APP_ENV=production`) |
+
+## Backend
+
+- `npm run backend:validate`: ejecuta migraciones, seed y pruebas de RLS en un PostgreSQL en memoria (PGlite). Sin red ni cuentas.
+- `npm run backend:check`: comprueba (solo lectura) que el backend de `.env` responde.
+- Guía completa: [docs/BACKEND.md](docs/BACKEND.md).
 
 ## Pruebas
 
@@ -69,14 +76,14 @@ se ejecuta con un *development build* (`expo-dev-client`).
 
 ## Variables de entorno
 
-| Variable | Obligatoria | Descripción |
-|---|---|---|
-| `SUPABASE_URL` | Sí | URL del proyecto Supabase |
-| `SUPABASE_ANON_KEY` | Sí | Clave pública `anon` (nunca la `service_role`) |
-| `POWERSYNC_URL` | Sí | URL de la instancia PowerSync |
-| `APP_ENV` | No | `development` (por defecto), `staging`, `production`. Cambia nombre, identificador y esquema (`TEINS (Dev)`, `com.teins.app.dev`, `teins-dev://`…). En `staging` y `production` la configuración falla si falta una variable obligatoria |
-| `LOG_LEVEL` | No | `debug`, `info`, `warning`, `error`, `none` |
-| `EAS_PROJECT_ID` | No | Id del proyecto de EAS (lo genera `eas init`; no es secreto). Se expone como `extra.eas.projectId` |
+| Variable            | Obligatoria | Descripción                                                                                                                                                                                                                              |
+| ------------------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SUPABASE_URL`      | Sí          | URL del proyecto Supabase                                                                                                                                                                                                                |
+| `SUPABASE_ANON_KEY` | Sí          | Clave pública del proyecto: la publicable (`sb_publishable_…`) o la `anon` heredada. Nunca la `service_role` ni una `sb_secret_…`                                                                                                        |
+| `POWERSYNC_URL`     | Sí          | URL de la instancia PowerSync                                                                                                                                                                                                            |
+| `APP_ENV`           | No          | `development` (por defecto), `staging`, `production`. Cambia nombre, identificador y esquema (`TEINS (Dev)`, `com.teins.app.dev`, `teins-dev://`…). En `staging` y `production` la configuración falla si falta una variable obligatoria |
+| `LOG_LEVEL`         | No          | `debug`, `info`, `warning`, `error`, `none`                                                                                                                                                                                              |
+| `EAS_PROJECT_ID`    | No          | Id del proyecto de EAS (lo genera `eas init`; no es secreto). Se expone como `extra.eas.projectId`                                                                                                                                       |
 
 Se leen en `app.config.ts` y llegan a la app por `src/constants/config.ts`. En EAS Build
 se definen en los entornos de variables de EAS, no en `.env` (ver [docs/COMPILACION.md](docs/COMPILACION.md)).

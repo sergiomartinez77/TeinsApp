@@ -20,15 +20,15 @@ Hoy **las direcciones de Supabase y PowerSync documentadas no resuelven en DNS**
 el proyecto Supabase y la instancia PowerSync de la app original ya no existen o
 han cambiado. Con esos valores la app solo funciona en **modo demo**.
 
-Antes de un build de **staging** o **producción** hace falta un backend operativo:
+Antes de un build de **staging** o **producción** hace falta un backend operativo (paso a paso en [BACKEND.md](BACKEND.md)):
 
 1. Un proyecto **Supabase** con:
-   - las migraciones `001` a `004` aplicadas, en orden;
+   - las migraciones de `supabase/migrations` aplicadas, en orden, y `supabase/seed.sql`;
    - la publicación de Postgres `powersync` (la que lee PowerSync);
    - el bucket de Storage `visit-photos` con sus políticas;
    - los usuarios técnicos creados (Authentication → Users) y sus perfiles.
-2. Una instancia **PowerSync** conectada a esa base, con las **Sync Rules** de la app
-   desplegadas y la autenticación de Supabase (JWT) configurada.
+2. Una instancia **PowerSync** conectada a esa base, con la configuración de sincronización
+   `powersync/sync-config.yaml` (Sync Streams) desplegada y la autenticación de Supabase (JWT) configurada.
 3. Las variables `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `POWERSYNC_URL` actualizadas
    en tu `.env` (local) y en los entornos de EAS (sección 3).
 
@@ -40,8 +40,8 @@ La configuración (`app.config.ts`) **se niega a generar** un build de `staging`
 variables obligatorias SUPABASE_URL. ...
 ```
 
-Lo que no detecta es una dirección **incorrecta**: compruébalas a mano antes de compilar
-(abre `SUPABASE_URL` en el navegador; debe responder).
+Lo que no detecta es una dirección **incorrecta**: compruébalas antes de compilar con
+`npm run backend:check` (ver [BACKEND.md](BACKEND.md)).
 
 ---
 

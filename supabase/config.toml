@@ -1,0 +1,48 @@
+# Configuración de la CLI de Supabase para TEINS (sin secretos).
+# Solo afecta al entorno LOCAL de la CLI (`supabase start`) y a `supabase db push`
+# (que aplica supabase/migrations). El proyecto en la nube se configura en el panel.
+# Referencia: https://supabase.com/docs/guides/local-development/cli/config
+
+project_id = "teins"
+
+[api]
+enabled = true
+port = 54321
+# La app solo usa el esquema public por la API (las funciones auxiliares de
+# RLS viven en `private`, que NO se expone).
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+# Versión mayor de PostgreSQL de los proyectos nuevos de Supabase.
+major_version = 17
+
+[db.seed]
+# `supabase db reset` (solo local) ejecuta seed.sql después de las migraciones.
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[storage]
+enabled = true
+file_size_limit = "5MiB"
+
+# El bucket también lo crea la migración 20260101000300 (fuente de verdad).
+[storage.buckets.visit-photos]
+public = false
+file_size_limit = "5MiB"
+allowed_mime_types = ["image/jpeg", "image/png", "image/webp"]
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:3000"
+# Los técnicos los crea un administrador: no hay registro público en la app.
+enable_signup = false
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false

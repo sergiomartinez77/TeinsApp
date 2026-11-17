@@ -66,6 +66,8 @@
     "test": "jest",
     "test:coverage": "jest --coverage",
     "check": "npm run typecheck && npm run lint && npm test",
+    "backend:validate": "node supabase/tests/validate.mjs",
+    "backend:check": "node scripts/check-backend.mjs",
     "prebuild:check": "expo config --type public && npx expo-doctor",
     "build:dev:android": "npx eas-cli@latest build --profile development --platform android",
     "build:dev:ios": "npx eas-cli@latest build --profile development --platform ios",

@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# TEINS — Configuración de sincronización de PowerSync (Sync Streams)
+#
+# Formato actual de PowerSync (Sync Streams, edición 3). Sustituye a las
+# antiguas "Sync Rules" (bucket_definitions + token_parameters.user_id) que
+# aparecían como comentario en la migración original 004.
+#   Docs: https://docs.powersync.com/sync/streams/overview
+#         https://docs.powersync.com/sync/streams/queries
+#
+# Cómo se carga: PowerSync Dashboard → tu instancia → "Sync Streams"/"Sync
+# Config" → pegar este archivo → Validate → Deploy. (Con la CLI de PowerSync,
+# este mismo archivo es `powersync/sync-config.yaml`.) Ver docs/BACKEND.md.
+#
+# • auth.user_id() = id del usuario de Supabase Auth (claim `sub` del JWT).
+# • auto_subscribe: true → se sincroniza al conectar, sin código en la app
+#   (la app no se suscribe a streams explícitamente).
+# • Tipos (https://docs.powersync.com/sync/types): JSONB llega como TEXTO JSON
+#   (responses, elements, sections_json; no hace falta ::text); BOOLEAN llega
+#   como 1/0 (la app filtra is_active = 1); enums, UUID y fechas como texto;
+#   NUMERIC como texto (por eso quantity se convierte a real).
+# ═══════════════════════════════════════════════════════════════════════════
+
+config:
+  edition: 3
+
+streams:
+  # Perfil del usuario conectado.
+  mi_perfil:
+    auto_subscribe: true
+    query: SELECT * FROM profiles WHERE id = auth.user_id()
+
+  # Visitas asignadas al técnico.
+  mis_visitas:
+    auto_subscribe: true
+    query: SELECT * FROM visits WHERE technician_id = auth.user_id()
+
+  # Filas hijas de las visitas del técnico.
+  detalle_de_mis_visitas:
+    auto_subscribe: true
+    with:
+      visitas_del_tecnico: SELECT id FROM visits WHERE technician_id = auth.user_id()
+    queries:
+      - SELECT * FROM form_responses WHERE visit_id IN visitas_del_tecnico
+      - |
+        SELECT id, visit_id, material_id, material_code, material_name, unit,
+               CAST(quantity AS real) AS quantity, observations, sync_status,
+               created_at, updated_at
+        FROM visit_materials WHERE visit_id IN visitas_del_tecnico
+      - SELECT * FROM photos WHERE visit_id IN visitas_del_tecnico
+      - SELECT * FROM annotations WHERE visit_id IN visitas_del_tecnico
+
+  # Catálogos activos (iguales para todos los usuarios).
+  catalogos:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM visit_types WHERE is_active = true
+      - SELECT * FROM form_templates WHERE is_active = true
+      - SELECT * FROM material_catalog WHERE is_active = true
