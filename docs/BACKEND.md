@@ -154,6 +154,39 @@ pisar el avance de las visitas.
 > En producción no ejecutes la parte de usuarios/visitas demo: crea los técnicos reales
 > (_Add user_) y carga el catálogo real.
 
+### 4.3. Usuarios nuevos y su perfil
+
+La app **no tiene pantalla de registro**: los usuarios los crea un administrador. Para
+dar de alta a alguien (un técnico real o una persona que va a probar la app):
+
+1. _Authentication → Users → Add user → Create new user_, con su correo, una
+   contraseña y **Auto Confirm User** marcado.
+2. El **perfil se crea solo**: un trigger de la base inserta la fila en `profiles` con
+   rol `technician`. No hay que hacer nada más para que pueda entrar y trabajar.
+3. Opcional, en el editor SQL, nombre visible u otro rol:
+
+   ```sql
+   UPDATE public.profiles
+   SET full_name = 'Nombre Apellido', role = 'technician'  -- o 'office' / 'admin'
+   WHERE email = 'correo@ejemplo.com';
+   ```
+
+Un técnico nuevo empieza **sin visitas**: puede crearlas desde la app con "Nueva
+visita". Para darle las 3 visitas de ejemplo, ejecuta `supabase/seed.sql` (solo las
+asigna a `tecnico@teins.com`).
+
+### 4.4. Desactivar el registro público (importante)
+
+Supabase permite por defecto que **cualquiera con la URL y la clave publicable** cree una
+cuenta llamando directamente a la API, aunque la app no tenga pantalla de registro. Esa
+cuenta recibiría el rol `technician`. Desactívalo:
+
+_Authentication → Sign In / Providers → **Allow new users to sign up**: desactivado._
+
+Con eso, solo pueden existir los usuarios que crees desde el panel (o con el script).
+(`supabase/config.toml` ya lo tiene desactivado, pero ese archivo solo afecta al
+Supabase local, no al proyecto en la nube.)
+
 ---
 
 ## 5. Crear la instancia PowerSync (requiere cuenta, gratis)
@@ -231,6 +264,26 @@ consultable) y que PowerSync responde. Nunca imprime la clave. Termina con
 Después, en un dispositivo: inicia sesión con `tecnico@teins.com`, comprueba que aparecen
 las 3 visitas demo, rellena un formulario, añade un material y una foto, y verifica en el
 panel de Supabase (_Table Editor_ y _Storage_) que llegan los datos.
+
+---
+
+## 7.1. Probar la app desde otro equipo
+
+Quien clone el repositorio de GitHub **no recibe el `.env`** (está en `.gitignore`), así
+que su copia no sabe a qué backend conectarse. Tiene tres opciones:
+
+| Quiere…                                      | Necesita                                                                                                           |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| Ver la app sin cuenta                        | Nada del backend: el **modo demo** funciona sin servidor ni conexión                                               |
+| Entrar con un usuario real en **tu** backend | Que le pases `SUPABASE_URL`, la clave publicable y `POWERSYNC_URL` para su `.env`, y que le crees un usuario (4.3) |
+| Su propio backend                            | Seguir esta guía desde el paso 1 con sus cuentas                                                                   |
+
+La URL y la clave **publicable** (`sb_publishable_…`) se pueden compartir: van dentro de
+la app de todas formas y la seguridad la ponen las reglas de la base. **Nunca** compartas
+la clave secreta (`service_role` / `sb_secret_…`) ni la contraseña de `powersync_role`.
+
+En los tres casos necesita además compilar la app (no funciona en Expo Go): Android
+Studio en su equipo o EAS Build. Ver [COMPILACION.md](COMPILACION.md).
 
 ---
 
