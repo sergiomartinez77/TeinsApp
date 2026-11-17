@@ -44,3 +44,6 @@ yarn-error.*
 
 # tests
 coverage/
+
+# Claude Code (configuracion local de cada persona)
+.claude/settings.local.json

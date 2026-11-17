@@ -117,7 +117,9 @@ END;
 $$;
 
 -- La función solo debe ejecutarla el trigger, no los clientes de la API.
-REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC;
+-- En Supabase, anon y authenticated reciben EXECUTE por privilegios por
+-- defecto del esquema public, así que no basta con revocarlo a PUBLIC.
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC, anon, authenticated;
 
 CREATE OR REPLACE TRIGGER on_auth_user_created
     AFTER INSERT ON auth.users
