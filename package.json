@@ -62,10 +62,18 @@
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"*.{ts,js,json}\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx}\" \"*.{ts,js,json}\" \"docs/**/*.md\"",
     "test": "jest",
     "test:coverage": "jest --coverage",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "check": "npm run typecheck && npm run lint && npm test",
+    "prebuild:check": "expo config --type public && npx expo-doctor",
+    "build:dev:android": "npx eas-cli@latest build --profile development --platform android",
+    "build:dev:ios": "npx eas-cli@latest build --profile development --platform ios",
+    "build:dev:ios-simulator": "npx eas-cli@latest build --profile development-simulator --platform ios",
+    "build:preview:android": "npx eas-cli@latest build --profile preview --platform android",
+    "build:preview:ios": "npx eas-cli@latest build --profile preview --platform ios",
+    "build:prod:android": "npx eas-cli@latest build --profile production --platform android",
+    "build:prod:ios": "npx eas-cli@latest build --profile production --platform ios"
   },
   "private": true
 }

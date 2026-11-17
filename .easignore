@@ -1,0 +1,44 @@
+# Archivos que EAS Build NO sube a sus servidores.
+#
+# OJO: si existe este archivo, EAS lo usa EN LUGAR de .gitignore (no se suman).
+# Por eso empieza con una copia de las reglas de .gitignore: si cambias .gitignore,
+# copia aquí el cambio. Lo más importante: `.env` nunca debe subirse.
+
+# ── Copia de .gitignore ──────────────────────────────────────────────────────
+node_modules/
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+.metro-health-check*
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+.DS_Store
+*.pem
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
+/ios
+/android
+coverage/
+
+# ── Solo para EAS: no hacen falta para compilar ───────────────────────────────
+# Documentación (guías y vistas previas de imágenes).
+/docs/
+# Tests y utilidades de test (Metro no los incluye en el bundle).
+**/__tests__/
+/src/test-utils/
+/jest.config.js
+/jest.setup.ts
+/jest.skia-environment.js
+# Configuración del editor y de herramientas locales.
+/.claude/

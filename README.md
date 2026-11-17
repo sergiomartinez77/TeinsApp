@@ -7,9 +7,13 @@ El backend (Supabase + PowerSync) es el mismo de la app original y no se modific
 
 ## Requisitos
 
-- Node.js 20 o superior para la app; **Node.js 22.13 o superior para los tests** (usan el módulo integrado `node:sqlite`; probado con Node 24)
-- Android Studio (SDK + emulador) para compilar en Android
-- macOS + Xcode, o EAS Build, para compilar en iOS
+- **Node.js 22.13+ o 24.3+** (lo exigen `expo` y `react-native` del SDK 58; los tests usan además el módulo integrado `node:sqlite`; probado con Node 24)
+- Cuenta gratuita de Expo para compilar en la nube con **EAS Build** (Android e iOS), o
+  Android Studio (JDK 17 + SDK + emulador) para compilar Android en local
+- iOS: EAS Build + Apple Developer Program, o macOS + Xcode
+- Dispositivos: **Android 7 (API 24)** o superior, **iOS 16.4** o superior
+
+Cómo compilar, instalar y publicar: [docs/COMPILACION.md](docs/COMPILACION.md).
 
 La app usa módulos nativos (PowerSync, Skia), por lo que **no funciona en Expo Go**:
 se ejecuta con un *development build* (`expo-dev-client`).
@@ -47,6 +51,12 @@ se ejecuta con un *development build* (`expo-dev-client`).
 | `npm test` | Tests unitarios y de integración (Jest) |
 | `npm run test:coverage` | Tests con informe de cobertura y umbrales mínimos |
 | `npm run check` | Tipos + lint + tests |
+| `npm run format` | Prettier sobre `src/`, la configuración y `docs/` |
+| `npm run prebuild:check` | Evalúa `app.config.ts` y ejecuta `expo-doctor` |
+| `npm run build:dev:android` / `build:dev:ios` | Development build en EAS (APK / iPhone registrado) |
+| `npm run build:dev:ios-simulator` | Development build para el simulador de iOS (solo Mac) |
+| `npm run build:preview:android` / `build:preview:ios` | Build interno para testers (`APP_ENV=staging`) |
+| `npm run build:prod:android` / `build:prod:ios` | Build de tienda: AAB / App Store (`APP_ENV=production`) |
 
 ## Pruebas
 
@@ -64,10 +74,12 @@ se ejecuta con un *development build* (`expo-dev-client`).
 | `SUPABASE_URL` | Sí | URL del proyecto Supabase |
 | `SUPABASE_ANON_KEY` | Sí | Clave pública `anon` (nunca la `service_role`) |
 | `POWERSYNC_URL` | Sí | URL de la instancia PowerSync |
-| `APP_ENV` | No | `development` (por defecto), `staging`, `production` |
+| `APP_ENV` | No | `development` (por defecto), `staging`, `production`. Cambia nombre, identificador y esquema (`TEINS (Dev)`, `com.teins.app.dev`, `teins-dev://`…). En `staging` y `production` la configuración falla si falta una variable obligatoria |
 | `LOG_LEVEL` | No | `debug`, `info`, `warning`, `error`, `none` |
+| `EAS_PROJECT_ID` | No | Id del proyecto de EAS (lo genera `eas init`; no es secreto). Se expone como `extra.eas.projectId` |
 
-Se leen en `app.config.ts` y llegan a la app por `src/constants/config.ts`.
+Se leen en `app.config.ts` y llegan a la app por `src/constants/config.ts`. En EAS Build
+se definen en los entornos de variables de EAS, no en `.env` (ver [docs/COMPILACION.md](docs/COMPILACION.md)).
 
 ## Estructura
 
@@ -102,4 +114,4 @@ El alias `@/` apunta a `src/`.
 - [x] Etapa 12 — Resumen de visita
 - [x] Etapa 13 — Validaciones y pulido
 - [x] Etapa 14 — Pruebas
-- [ ] Etapa 15 — Optimización y build
+- [x] Etapa 15 — Optimización y build ([guía de compilación](docs/COMPILACION.md))
