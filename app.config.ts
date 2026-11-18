@@ -129,6 +129,18 @@ export function validateBuildEnv(
     return;
   }
 
+  // `eas build` lee la configuración en el PC antes de subir el proyecto, sin
+  // .env (EXPO_NO_DOTENV) ni las variables del entorno de EAS. Esa lectura
+  // previa solo avisa: la comprobación estricta se hace en el servidor de
+  // compilación (EAS_BUILD=true), que sí recibe las variables.
+  if (env.EXPO_NO_DOTENV && env.EAS_BUILD !== 'true') {
+    warn(
+      `[TEINS] Aviso: faltan ${list} en la lectura local de EAS; ` +
+        'se comprobarán en el servidor de compilación.',
+    );
+    return;
+  }
+
   throw new Error(
     `[TEINS] No se puede generar la configuración para APP_ENV=${environment}: ` +
       `faltan las variables obligatorias ${list}. ` +

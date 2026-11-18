@@ -120,6 +120,19 @@ describe('validateBuildEnv', () => {
     ).toThrow(new RegExp(`APP_ENV=${env}: faltan las variables obligatorias SUPABASE_ANON_KEY`));
     expect(warn).not.toHaveBeenCalled();
   });
+
+  it('en la lectura local de eas build (sin .env) solo avisa', () => {
+    const warn = jest.fn();
+    expect(() => validateBuildEnv('staging', { EXPO_NO_DOTENV: '1' }, warn)).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('en el servidor de EAS falla aunque EXPO_NO_DOTENV esté definida', () => {
+    const warn = jest.fn();
+    expect(() =>
+      validateBuildEnv('production', { EXPO_NO_DOTENV: '1', EAS_BUILD: 'true' }, warn),
+    ).toThrow(/faltan las variables obligatorias/);
+  });
 });
 
 describe('blockedAndroidPermissions', () => {
