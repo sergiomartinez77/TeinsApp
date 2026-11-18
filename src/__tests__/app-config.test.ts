@@ -1,6 +1,7 @@
 import type { ExpoConfig } from 'expo/config';
 
 import appConfig, {
+  DEFAULT_EAS_PROJECT_ID,
   APP_VERSION,
   ANDROID_PERMISSIONS,
   blockedAndroidPermissions,
@@ -168,6 +169,7 @@ describe('buildExpoConfig', () => {
       powerSyncUrl: FULL_ENV.POWERSYNC_URL,
       appEnv: 'development',
       logLevel: 'debug',
+      eas: { projectId: DEFAULT_EAS_PROJECT_ID },
     });
   });
 
@@ -198,9 +200,11 @@ describe('buildExpoConfig', () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  it('incluye extra.eas.projectId solo si existe EAS_PROJECT_ID', () => {
-    expect(build(FULL_ENV).extra?.eas).toBeUndefined();
-    expect(build({ ...FULL_ENV, EAS_PROJECT_ID: '  ' }).extra?.eas).toBeUndefined();
+  it('usa el proyecto de EAS de TEINS y permite sustituirlo con EAS_PROJECT_ID', () => {
+    expect(build(FULL_ENV).extra?.eas).toEqual({ projectId: DEFAULT_EAS_PROJECT_ID });
+    expect(build({ ...FULL_ENV, EAS_PROJECT_ID: '  ' }).extra?.eas).toEqual({
+      projectId: DEFAULT_EAS_PROJECT_ID,
+    });
     expect(build({ ...FULL_ENV, EAS_PROJECT_ID: ' id-de-prueba ' }).extra?.eas).toEqual({
       projectId: 'id-de-prueba',
     });

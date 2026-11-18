@@ -186,6 +186,9 @@ const PHOTOS_PERMISSION_TEXT =
   'TEINS necesita acceso a tus fotos para adjuntarlas a la visita técnica.';
 
 /** Construye la configuración de Expo a partir de un entorno de procesos. */
+/** Proyecto de EAS de TEINS en expo.dev. */
+export const DEFAULT_EAS_PROJECT_ID = 'b59cb461-3e85-4ae9-847d-c7acad4a8238';
+
 export function buildExpoConfig(
   config: ConfigContext['config'],
   env: EnvSource,
@@ -197,14 +200,16 @@ export function buildExpoConfig(
   // En staging/producción falla si falta el backend; en desarrollo solo avisa.
   validateBuildEnv(environment, env, warn);
 
-  // Lo genera `eas init`. No es secreto; se lee del entorno para no inventarlo
-  // mientras no exista el proyecto de EAS (ver docs/COMPILACION.md).
-  const easProjectId = env.EAS_PROJECT_ID?.trim();
+  // Proyecto de EAS (lo da `eas init` / expo.dev). No es secreto: Expo recomienda
+  // dejarlo en la configuración. EAS_PROJECT_ID permite usar otro proyecto.
+  const easProjectId = env.EAS_PROJECT_ID?.trim() || DEFAULT_EAS_PROJECT_ID;
 
   return {
     ...config,
     name: variant.name,
-    slug: 'teins-app',
+    // Deben coincidir con el proyecto en expo.dev (@sergiomtz7s-team/teins).
+    owner: 'sergiomtz7s-team',
+    slug: 'teins',
     version: APP_VERSION,
     scheme: variant.scheme,
     // La app soporta vertical y horizontal en teléfono y tablet.
