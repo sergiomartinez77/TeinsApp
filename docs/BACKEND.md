@@ -214,6 +214,24 @@ Supabase local, no al proyecto en la nube.)
 6. Copia la **URL de la instancia** (botón _Connect_ / _Instance URL_, del estilo
    `https://xxxxxxxx.powersync.journeyapps.com`).
 
+> **Si PowerSync crea su propio usuario de base de datos.** El asistente de conexión con
+> Supabase puede crear un usuario propio (`powersync_<id>`) en lugar de usar
+> `powersync_role`. Ese usuario trae permiso de replicación pero **no puede leer las
+> tablas**, así que PowerSync no llega a sincronizar (en Supabase no aparece ninguna
+> ranura de replicación). Dale permiso de lectura en el editor SQL, con el nombre que
+> muestre el campo _Username_ de PowerSync:
+>
+> ```sql
+> GRANT USAGE ON SCHEMA public TO "powersync_<id>";
+> GRANT SELECT ON public.profiles, public.visit_types, public.form_templates,
+>   public.visits, public.form_responses, public.material_catalog,
+>   public.visit_materials, public.photos, public.annotations TO "powersync_<id>";
+> ```
+>
+> Después vuelve a pulsar **Deploy** en Sync Streams. Para comprobar que sincroniza:
+> `SELECT slot_name, active FROM pg_replication_slots;` debe devolver una fila
+> `powersync_…` con `active = true`.
+
 La configuración sincroniza, para cada usuario: su perfil, sus visitas, las respuestas,
 materiales, fotos y anotaciones de esas visitas, y los tipos de visita, plantillas y
 materiales activos. Los JSONB (`responses`, `elements`, `sections_json`) llegan como
