@@ -25,10 +25,12 @@ export const OWN_VISIT_SQL =
 /** Una foto de la visita por id. */
 export const PHOTO_BY_ID_SQL = 'SELECT * FROM photos WHERE id = ? AND visit_id = ? LIMIT 1';
 
+/** Las columnas de la marca impresa (ubicación y hora) van al final. */
 export const INSERT_PHOTO_SQL = `INSERT INTO photos (
   id, visit_id, form_field_id, local_path, storage_path, storage_url, caption,
-  sync_status, captured_at, uploaded_at, file_size_bytes, width, height
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  sync_status, captured_at, uploaded_at, file_size_bytes, width, height,
+  latitude, longitude, location_accuracy, taken_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
 export const DELETE_PHOTO_SQL = 'DELETE FROM photos WHERE id = ?';
 

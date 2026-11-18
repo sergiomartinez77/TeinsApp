@@ -32,7 +32,7 @@ npm run backend:validate
 ```
 
 Ejecuta todas las migraciones y el seed en un PostgreSQL real en memoria (PGlite) y
-comprueba con más de 100 aserciones que los permisos son correctos (cada técnico ve y
+comprueba con más de 150 aserciones que los permisos son correctos (cada técnico ve y
 modifica solo lo suyo, la oficina lee todo, un anónimo no lee nada, el seed se puede
 repetir…). La primera vez descarga PGlite (≈ 10 MB) en una carpeta temporal del sistema,
 no en el proyecto. Debe terminar con `0 fallidas`.
@@ -71,6 +71,9 @@ En el panel: **SQL Editor → New query**. Para **cada archivo**, en este orden 
 2. `supabase/migrations/20260101000200_politicas_rls.sql`
 3. `supabase/migrations/20260101000300_storage_fotos.sql`
 4. `supabase/migrations/20260101000400_powersync.sql`
+5. `supabase/migrations/20261118000100_fotos_ubicacion.sql`
+6. `supabase/migrations/20261118000200_materiales_personalizados.sql`
+7. `supabase/migrations/20261118000300_varios_formularios.sql`
 
 abre el archivo en un editor de texto, copia **todo** su contenido, pégalo en el editor
 SQL y pulsa **Run**. Debe responder _Success. No rows returned_. Si el panel avisa de que
@@ -105,6 +108,33 @@ ALTER ROLE powersync_role WITH PASSWORD 'pega-aquí-la-contraseña';
 No guardes esta consulta en el panel (_Save_), ni la contraseña en el repositorio.
 
 ---
+
+### 2.2. Proyecto que ya existe: aplicar las migraciones de noviembre de 2026 (obligatorio)
+
+Si el backend **ya estaba creado** (con las migraciones 1–4), hay que aplicar las tres
+migraciones nuevas, **en este orden**, con el editor SQL (Opción A) o `npx supabase db push`
+(Opción B). Son idempotentes y **conservan todos los datos**:
+
+| Migración                                      | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                 | Datos existentes                                                                                                                                                                                                                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20261118000100_fotos_ubicacion.sql`           | `photos`: columnas opcionales `latitude`, `longitude`, `location_accuracy` (metros) y `taken_at` (hora impresa en la foto). Restricciones: coordenadas en rango y siempre juntas; precisión ≥ 0                                                                                                                                                                                                                          | No cambia ninguna fila: las fotos anteriores quedan con esas columnas en NULL (sin marca)                                                                                                                                                                                   |
+| `20261118000200_materiales_personalizados.sql` | `visit_materials.material_id` admite NULL; columna `is_custom BOOLEAN NOT NULL DEFAULT FALSE`; `chk_visit_material_source` (del catálogo con `material_id`, o personalizado sin él); `chk_visit_material_custom_text` (nombre 1–120 y unidad 1–20); índice único `uq_visit_material_custom` (mismo nombre y unidad en la visita, sin distinguir mayúsculas). El código guardado en los personalizados es `PERSONALIZADO` | Todas las filas quedan con `is_custom = FALSE` (son del catálogo). `updated_at` no cambia                                                                                                                                                                                   |
+| `20261118000300_varios_formularios.sql`        | `form_responses`: columna `template_key` (UUID de la plantilla en texto o id de la plantilla de respaldo de la app); trigger que la calcula si una escritura llega sin ella (versiones anteriores de la app); se quita `UNIQUE (visit_id)` y se añade `UNIQUE (visit_id, template_key)`: varios formularios por visita, uno por plantilla                                                                                | Se rellena `template_key` = `template_id` o `responses->>'__template_key'`, **sin cambiar `updated_at`** (trigger de fecha desactivado durante el relleno). Una respuesta sin ninguno de los dos queda con NULL y la app la sigue mostrando como antes (por tipo de visita) |
+
+Las políticas RLS no cambian: las de `visit_materials` y `form_responses` dependen de
+`visit_id`, así que el técnico puede crear, editar y quitar materiales personalizados y
+crear varios formularios **solo en sus visitas** (comprobado en `npm run backend:validate`,
+secciones 13–15 y 17, que además aplica las migraciones sobre un proyecto con datos).
+
+**PowerSync**: vuelve a pegar `powersync/sync-config.yaml` en _Sync Streams_ y pulsa
+**Deploy**: la consulta de `visit_materials` enumera columnas y ahora incluye `is_custom`.
+`photos` y `form_responses` usan `SELECT *` y reciben las columnas nuevas solas. La
+publicación `powersync` no hay que tocarla.
+
+**Orden de despliegue**: aplica las migraciones y despliega la configuración de PowerSync
+**antes** de instalar la versión nueva de la app. Si la app nueva sube datos a un servidor
+sin migrar, Supabase responde que la columna no existe; la subida se reintenta (no se
+pierde nada) pero no avanza hasta que se migre.
 
 ## 3. Comprobar el resultado en el panel
 

@@ -18,11 +18,18 @@ export function MaterialsSummary({ summary }: MaterialsSummaryProps) {
         style={styles.row}
         accessible
         accessibilityRole="summary"
-        accessibilityLabel={`${summary.countLabel}. Totales: ${summary.totalsLabel}`}
+        accessibilityLabel={`${summary.countLabel}${
+          summary.customLabel ? `, ${summary.customLabel}` : ''
+        }. Totales: ${summary.totalsLabel}`}
       >
         <Icon name="inventory-2" size={28} color={colors.secondaryDark} />
         <View style={styles.texts}>
           <AppText variant="titleMedium">{summary.countLabel}</AppText>
+          {summary.customLabel ? (
+            <AppText variant="bodySmall" color={colors.textSecondary}>
+              {`Incluye ${summary.customLabel} (fuera del catálogo)`}
+            </AppText>
+          ) : null}
           <AppText variant="bodyMedium" color={colors.textSecondary}>
             {summary.totalsLabel}
           </AppText>

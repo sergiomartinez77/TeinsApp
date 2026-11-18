@@ -251,7 +251,8 @@ it('recorre una visita de principio a fin y después queda cerrada a toda escrit
 
   const { result } = await renderHook(() => useVisitSummary(TECH_A, visitFromRow(storedVisit)));
   expect(result.current).toEqual({
-    'form-select': 'Completado · Plantilla de la base',
+    // Varios formularios por visita: ahora se cuentan (antes "Completado · <plantilla>").
+    'form-select': '1 formulario · 1 completado',
     materials: '1 material · 12,5 metro',
     photos: '1 fotografía · 1 por subir',
     annotations: '1 elemento',

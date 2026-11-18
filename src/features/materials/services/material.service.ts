@@ -8,8 +8,16 @@ import { appError, err, ok, validationError, type Result } from '@/types/errors'
 import { scopedLogger } from '@/utils/logger';
 import { generateId } from '@/utils/uuid.utils';
 
-import { quantityValueError, type MaterialEntryInput } from '../validation';
+import {
+  customMaterialKey,
+  customNameError,
+  customUnitError,
+  normalizeCustomText,
+  quantityValueError,
+  type MaterialEntryInput,
+} from '../validation';
 
+import { INSERT_VISIT_MATERIAL_SQL, VISIT_CUSTOM_MATERIALS_SQL } from './custom-material.queries';
 import {
   CATALOG_MATERIAL_BY_ID_SQL,
   OWN_VISIT_SQL,
@@ -29,13 +37,38 @@ export interface MaterialDatabase {
   writeTransaction: <T>(callback: (tx: MaterialTransaction) => Promise<T>) => Promise<T>;
 }
 
+/** Los personalizados necesitan además leer varias filas (para detectar repetidos). */
+export interface CustomMaterialTransaction extends MaterialTransaction {
+  getAll: <T>(sql: string, parameters?: unknown[]) => Promise<T[]>;
+}
+
+export interface CustomMaterialDatabase {
+  writeTransaction: <T>(callback: (tx: CustomMaterialTransaction) => Promise<T>) => Promise<T>;
+}
+
+/**
+ * Código que se guarda en `material_code` de los materiales personalizados
+ * (la columna es obligatoria y no hay código de catálogo). La app no lo
+ * muestra: en su lugar aparece la marca "Personalizado".
+ */
+export const CUSTOM_MATERIAL_CODE = 'PERSONALIZADO';
+
 export const MATERIAL_SERVICE_MESSAGES = {
   visitClosed: 'La visita está cerrada y sus materiales ya no se pueden modificar.',
   visitNotFound: 'No se encontró la visita. Es posible que ya no esté asignada a ti.',
   duplicate: 'Este material ya está en la visita. Puedes cambiar su cantidad.',
   materialUnavailable: 'Este material ya no está disponible en el catálogo.',
   itemNotFound: 'No se encontró el material en la visita. Es posible que ya se haya quitado.',
+  customDuplicate:
+    'Ya agregaste un material personalizado con ese nombre y esa unidad en esta visita. Puedes cambiar su cantidad.',
 } as const;
+
+/** Material que no está en el catálogo: nombre y unidad escritos por el técnico. */
+export interface AddCustomMaterialInput extends MaterialEntryInput {
+  visitId: string;
+  name: string;
+  unit: string;
+}
 
 /** Material nuevo: el del catálogo elegido, con su cantidad y observaciones. */
 export interface AddVisitMaterialInput extends MaterialEntryInput {
@@ -88,10 +121,10 @@ function normalizeEntry(input: MaterialEntryInput): Result<MaterialEntryInput> {
 }
 
 /** Ejecuta la transacción y traduce cualquier fallo a un `Result`. */
-async function run<T>(
-  db: MaterialDatabase,
+async function run<T, Tx extends MaterialTransaction>(
+  db: { writeTransaction: <R>(callback: (tx: Tx) => Promise<R>) => Promise<R> },
   failureMessage: string,
-  callback: (tx: MaterialTransaction) => Promise<T>,
+  callback: (tx: Tx) => Promise<T>,
 ): Promise<Result<T>> {
   try {
     return ok(await db.writeTransaction(callback));
@@ -148,26 +181,81 @@ export async function addMaterialToVisit(
       sync_status: 'pendingSync',
       created_at: timestamp,
       updated_at: timestamp,
+      is_custom: 0,
     };
-    await tx.execute(
-      `INSERT INTO visit_materials (
-         id, visit_id, material_id, material_code, material_name, unit,
-         quantity, observations, sync_status, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        row.id,
-        row.visit_id,
-        row.material_id,
-        row.material_code,
-        row.material_name,
-        row.unit,
-        row.quantity,
-        row.observations,
-        row.sync_status,
-        row.created_at,
-        row.updated_at,
-      ],
+    await tx.execute(INSERT_VISIT_MATERIAL_SQL, insertParameters(row));
+    return visitMaterialFromRow(row);
+  });
+}
+
+/** Parámetros de `INSERT_VISIT_MATERIAL_SQL`, en su orden. */
+function insertParameters(row: Record<string, unknown>): unknown[] {
+  return [
+    row.id,
+    row.visit_id,
+    row.material_id,
+    row.material_code,
+    row.material_name,
+    row.unit,
+    row.quantity,
+    row.observations,
+    row.sync_status,
+    row.created_at,
+    row.updated_at,
+    row.is_custom,
+  ];
+}
+
+/**
+ * Agrega a la visita un material que NO está en el catálogo (solo para esta
+ * visita: el catálogo no se toca). Se guarda con `material_id = NULL`,
+ * `is_custom = 1` y `material_code = 'PERSONALIZADO'`.
+ *
+ * Repetidos: no chocan con los del catálogo; dos personalizados con el mismo
+ * nombre y unidad (sin distinguir mayúsculas ni espacios) se rechazan.
+ */
+export async function addCustomMaterialToVisit(
+  db: CustomMaterialDatabase,
+  technicianId: string,
+  input: AddCustomMaterialInput,
+  now: Date = new Date(),
+): Promise<Result<VisitMaterial>> {
+  const name = normalizeCustomText(input.name);
+  const unit = normalizeCustomText(input.unit);
+  const textError = customNameError(name) ?? customUnitError(unit);
+  if (textError) return err(validationError(textError, 'invalid_custom_material'));
+  const entry = normalizeEntry(input);
+  if (!entry.ok) return entry;
+  const { quantity, observations } = entry.data;
+  const timestamp = now.toISOString();
+
+  return run(db, 'No se pudo agregar el material personalizado', async (tx) => {
+    await assertEditableVisit(tx, technicianId, input.visitId);
+
+    const key = customMaterialKey(name, unit);
+    const customs = await tx.getAll<Record<string, unknown>>(VISIT_CUSTOM_MATERIALS_SQL, [
+      input.visitId,
+    ]);
+    const repeated = customs.some(
+      (row) => customMaterialKey(String(row.material_name ?? ''), String(row.unit ?? '')) === key,
     );
+    if (repeated) throw rule(MATERIAL_SERVICE_MESSAGES.customDuplicate, 'duplicate');
+
+    const row: Record<string, unknown> = {
+      id: generateId(),
+      visit_id: input.visitId,
+      material_id: null,
+      material_code: CUSTOM_MATERIAL_CODE,
+      material_name: name,
+      unit,
+      quantity,
+      observations,
+      sync_status: 'pendingSync',
+      created_at: timestamp,
+      updated_at: timestamp,
+      is_custom: 1,
+    };
+    await tx.execute(INSERT_VISIT_MATERIAL_SQL, insertParameters(row));
     return visitMaterialFromRow(row);
   });
 }

@@ -267,6 +267,84 @@ Ver la sección 9.
 
 ---
 
+## 20. Marca de fecha y ubicación en las fotos — P1
+
+Requisitos: backend migrado (docs/BACKEND.md, 2.2) si se prueba con sincronización.
+
+1. [ ] Primera foto con la cámara en una visita en curso. **Esperado**: tras el permiso de
+       cámara, el sistema pide la ubicación con el texto en español «mientras usas la app»
+       (Android: «Mientras la app está en uso»; nunca «Permitir todo el tiempo»).
+2. [ ] Acepta, al aire libre. **Esperado**: la foto guardada lleva abajo una franja oscura
+       semitransparente con la fecha y hora local (`18/11/2026 14:35:07`), las coordenadas
+       con 6 decimales y la precisión (`-3.993421, -79.204512 ±8 m`) y el título de la
+       visita. Se lee bien sobre una foto clara (pared blanca, cielo) y sobre una oscura.
+3. [ ] Compara las coordenadas con Google Maps (mantén pulsado el punto): coinciden con
+       unos metros de diferencia. Gira el teléfono: en vertical y horizontal la letra es
+       proporcional y la franja no tapa más de ~20 % de la foto.
+4. [ ] Visita con un título muy largo: se recorta con «…» sin salirse de la imagen.
+5. [ ] Abre la foto en el visor. **Esperado**: el pie muestra la misma fecha y las
+       coordenadas (o «Ubicación no disponible»).
+6. [ ] Deniega la ubicación (o quítala en Ajustes) y toma otra foto. **Esperado**: se
+       guarda igual, con «Ubicación no disponible», sin errores.
+7. [ ] Activa el GPS en interiores / sin señal (modo avión con GPS activo). **Esperado**: la
+       foto se guarda como máximo ~8 s después, con ubicación o con «Ubicación no
+       disponible». Una segunda foto antes de 2 minutos sale sin espera (última posición).
+8. [ ] Sin Internet: la marca se dibuja igual (no hace falta red; no hay dirección escrita).
+9. [ ] Elige de la galería una foto antigua tomada con la cámara del teléfono.
+       **Esperado**: fecha y hora de la foto (no la actual). Ubicación: la de la foto si el
+       sistema la entrega; si no, «Ubicación no disponible» (nunca la posición actual).
+       _Nota_: en Android 10+ el sistema suele quitar la ubicación de las fotos de galería
+       (la app no pide `ACCESS_MEDIA_LOCATION`), así que lo normal es «Ubicación no
+       disponible».
+10. [ ] Una foto de galería sin fecha (captura de pantalla). **Esperado**: fecha actual.
+11. [ ] Tamaño: una foto de 12 MP ocupa menos de 5 MB y mide como máximo 1920×1080 / 1080×1920.
+12. [ ] Con backend: en _Table Editor → photos_ la fila tiene `latitude`, `longitude`,
+        `location_accuracy` y `taken_at`; en Storage la imagen subida lleva la marca.
+13. [ ] Tiempo de guardado: anota cuánto tarda desde que se toca «Aceptar» en la cámara hasta
+        que aparece la miniatura en un Android de gama media (objetivo: < 3 s con GPS reciente).
+
+## 21. Materiales personalizados — P1
+
+1. [ ] Materiales → Agregar material. **Esperado**: se ve el botón «Agregar material que no
+       está en el catálogo» (también si el catálogo no cargó).
+2. [ ] Ábrelo: nombre, unidad (Unidad, Metro, Kilogramo, Litro, Caja, Rollo, Par, Juego,
+       Global, Otra), cantidad y observaciones. Pulsa «Agregar» vacío: aparecen los errores
+       en español.
+3. [ ] Elige «Otra (escribirla)»: aparece «Escribe la unidad» (máx. 20). La cantidad muestra
+       esa unidad al lado.
+4. [ ] Agrega «Abrazadera especial», 2,5 caja. **Esperado**: en la lista aparece con la
+       marca «Personalizado» (sin código) y el resumen dice «Incluye 1 personalizado».
+5. [ ] Intenta agregar « abrazadera ESPECIAL » en caja otra vez. **Esperado**: mensaje
+       «Ya agregaste un material personalizado con ese nombre y esa unidad…». En metro sí
+       se acepta. Un material del catálogo con el mismo nombre también.
+6. [ ] Edita la cantidad y quita el personalizado: funcionan como los del catálogo.
+7. [ ] Resumen de la visita: «N materiales · 1 personalizado · …».
+8. [ ] Con backend: en _visit_materials_ la fila tiene `material_id` NULL, `is_custom` true y
+       `material_code` `PERSONALIZADO`; el catálogo (`material_catalog`) no cambió. En otro
+       dispositivo del mismo técnico aparece con la marca «Personalizado».
+
+## 22. Varios formularios en la misma visita — P1
+
+1. [ ] Detalle de visita → Formulario técnico. **Esperado**: pantalla «Formularios técnicos»
+       con «Sin formularios» y el botón «Agregar formulario».
+2. [ ] Agregar formulario: las plantillas del tipo de visita salen primero («Recomendado»).
+       Elige una, llena la mitad y vuelve atrás. **Esperado**: la lista muestra la plantilla,
+       «En curso» y «x de y campos obligatorios».
+3. [ ] Agrega un segundo formulario con otra plantilla. **Esperado**: la plantilla ya usada no
+       se ofrece. Vuelve al primero: conserva lo escrito.
+4. [ ] Cambia rápido entre formularios y cierra la app a mitad (sección 14). **Esperado**:
+       nada se pierde.
+5. [ ] Completa uno: queda «Completado» y de solo lectura; el otro sigue editable.
+6. [ ] Resumen de la visita: «2 formularios · 1 completado». «Finalizar visita» no exige
+       formularios. Con la visita finalizada la lista es de solo lectura y no hay botón para
+       agregar.
+7. [ ] Visita que ya tenía un formulario antes de esta versión: aparece en la lista con su
+       plantilla y se puede seguir llenando.
+8. [ ] Con backend: _form_responses_ tiene una fila por formulario con `template_key`; la
+       visita conserva en `form_template_id` la plantilla del **primer** formulario.
+
+---
+
 ## Registro de ejecución
 
 | Fecha | Dispositivo | Sistema | Build | Secciones | Resultado | Notas |

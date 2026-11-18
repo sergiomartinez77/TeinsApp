@@ -1,17 +1,14 @@
 import { useQuery } from '@powersync/react';
-import { useMemo } from 'react';
 
 import { useVisitAnnotation } from '@/features/annotations/hooks/useVisitAnnotation';
-import { useFormResponse } from '@/features/forms/hooks/useFormResponse';
-import { useFormTemplates } from '@/features/forms/hooks/useFormTemplates';
-import { resolveTemplateForResponse } from '@/features/forms/services/template.service';
+import { useVisitFormResponses } from '@/features/forms/hooks/useVisitForms';
 import { useVisitMaterials } from '@/features/materials/hooks/useVisitMaterials';
 import { VISIT_PHOTO_STATS_SQL } from '@/features/photos/services/photo.queries';
 import type { Visit } from '@/models/visit.model';
 
 import {
   annotationsStatusText,
-  formStatusText,
+  formsStatusText,
   materialsStatusText,
   photosStatusText,
   sectionStatusText,
@@ -29,8 +26,7 @@ const toCount = (value: unknown): number => {
  * consulta falla, solo su sección muestra "No disponible".
  */
 export function useVisitSummary(technicianId: string, visit: Visit): SectionStatuses {
-  const form = useFormResponse(visit.id);
-  const templates = useFormTemplates();
+  const forms = useVisitFormResponses(visit.id);
   const materials = useVisitMaterials(visit.id);
   const annotation = useVisitAnnotation(visit.id);
   // Solo se cuentan las fotos: no hace falta cargar las filas.
@@ -39,13 +35,6 @@ export function useVisitSummary(technicianId: string, visit: Visit): SectionStat
     technicianId,
   ]);
 
-  const { response } = form;
-  const templateName = useMemo(() => {
-    // Si no se pueden leer las plantillas, se muestra solo el estado del formulario.
-    if (!response || templates.hasError) return null;
-    return resolveTemplateForResponse(templates.catalog, response, visit.visitType)?.name ?? null;
-  }, [response, templates.catalog, templates.hasError, visit.visitType]);
-
   const statsRow = photoStats.data[0];
   const photoTotal = toCount(statsRow?.total);
   const photoPending = toCount(statsRow?.pending);
@@ -53,7 +42,7 @@ export function useVisitSummary(technicianId: string, visit: Visit): SectionStat
   const elementCount = annotation.annotation?.elements.length ?? 0;
 
   return {
-    'form-select': sectionStatusText(form, () => formStatusText(response, templateName)),
+    'form-select': sectionStatusText(forms, () => formsStatusText(forms.responses)),
     materials: sectionStatusText(materials, () => materialsStatusText(materials.summary)),
     photos: sectionStatusText(photoState, () => photosStatusText(photoTotal, photoPending)),
     annotations: sectionStatusText(annotation, () => annotationsStatusText(elementCount)),

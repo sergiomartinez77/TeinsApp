@@ -17,11 +17,16 @@ export interface CatalogMaterial {
 /**
  * Material usado en una visita. Código, nombre y unidad son una copia del
  * catálogo al momento de agregarlo: el registro no cambia si cambia el catálogo.
+ *
+ * Un material personalizado (`isCustom`) no está en el catálogo: el técnico
+ * escribió su nombre y unidad solo para esta visita y no tiene `materialId`.
  */
 export interface VisitMaterial {
   readonly id: string;
   readonly visitId: string;
-  readonly materialId: string;
+  /** Material del catálogo; `null` en los personalizados. */
+  readonly materialId: string | null;
+  readonly isCustom: boolean;
   readonly materialCode: string;
   readonly materialName: string;
   readonly unit: string;
@@ -63,7 +68,8 @@ export function visitMaterialFromRow(row: Record<string, unknown>): VisitMateria
   return {
     id: text(row.id),
     visitId: text(row.visit_id),
-    materialId: text(row.material_id),
+    materialId: optionalText(row.material_id),
+    isCustom: Number(row.is_custom) === 1,
     materialCode: text(row.material_code),
     materialName: text(row.material_name),
     unit: text(row.unit),
@@ -86,6 +92,10 @@ export interface MaterialsSummary {
   readonly count: number;
   /** "1 material" o "N materiales". */
   readonly countLabel: string;
+  /** Cuántos son personalizados (no están en el catálogo). */
+  readonly customCount: number;
+  /** "1 personalizado" / "N personalizados"; vacío si no hay. */
+  readonly customLabel: string;
   /** Totales por unidad, en el orden en que aparece cada unidad. */
   readonly totals: readonly UnitTotal[];
   /** Ej.: "120 metro · 14 unidad". */
@@ -112,10 +122,16 @@ export function summarizeMaterials(materials: readonly VisitMaterial[]): Materia
     quantity: Math.round(quantity * 1000) / 1000,
   }));
   const count = materials.length;
+  const customCount = materials.filter((material) => material.isCustom).length;
 
   return {
     count,
     countLabel: `${count} ${count === 1 ? 'material' : 'materiales'}`,
+    customCount,
+    customLabel:
+      customCount === 0
+        ? ''
+        : `${customCount} ${customCount === 1 ? 'personalizado' : 'personalizados'}`,
     totals,
     totalsLabel: totals
       .map((total) => formatQuantityWithUnit(total.quantity, total.unit))

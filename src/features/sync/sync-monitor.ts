@@ -36,6 +36,22 @@ export interface SyncMonitorSource {
 /** Tablas cuyas escrituras generan cambios por subir. */
 const WATCHED_TABLES = ['visits', 'form_responses', 'visit_materials', 'photos', 'annotations'];
 
+/** Texto legible de un error de PowerSync (puede llegar como objeto plano). */
+function describeFailure(failure: unknown): string | null {
+  if (!failure) return null;
+  if (typeof failure === 'object') {
+    const { name, message } = failure as { name?: unknown; message?: unknown };
+    const parts = [name, message].filter((part) => typeof part === 'string' && part.length > 0);
+    if (parts.length > 0) return parts.join(': ');
+    try {
+      return JSON.stringify(failure).slice(0, 500);
+    } catch {
+      return 'Error desconocido';
+    }
+  }
+  return String(failure);
+}
+
 /**
  * Mantiene el store de sincronización al día mientras la base está abierta.
  * Reacciona a tres fuentes: el estado de PowerSync, la conectividad del
@@ -51,12 +67,28 @@ export function startSyncMonitor(
   let pendingCount = 0;
   let stopped = false;
   let savedLastSync: string | null = null;
+  let lastErrorText: string | null = null;
   const abort = new AbortController();
 
   const publish = () => {
     if (stopped) return;
     const flow = status.dataFlowStatus;
     const lastSyncedAt = status.lastSyncedAt?.toISOString() ?? null;
+
+    // Registra el motivo del fallo (solo el mensaje, sin datos de sesión) una
+    // vez por cada error distinto, para poder diagnosticarlo desde el log.
+    const failure = flow.downloadError ?? flow.uploadError;
+    // PowerSync entrega el error serializado como objeto { name, message }.
+    const errorText = describeFailure(failure);
+    if (errorText !== lastErrorText) {
+      lastErrorText = errorText;
+      if (errorText) {
+        log.warn('Fallo de sincronización', {
+          direccion: flow.downloadError ? 'descarga' : 'subida',
+          motivo: errorText,
+        });
+      }
+    }
 
     useSyncStore.getState().setSnapshot({
       state: deriveSyncState({

@@ -40,7 +40,7 @@ export default function VisitMaterialsScreen() {
 
   const visitQuery = useVisit(user.id, visitId);
   const list = useVisitMaterials(visitId);
-  const { add, update, remove, isBusy } = useMaterialActions(visitId);
+  const { add, addCustom, update, remove, isBusy } = useMaterialActions(visitId);
 
   const [sheetOpen, setSheetOpen] = useState(false);
   const [editing, setEditing] = useState<VisitMaterial | null>(null);
@@ -84,7 +84,9 @@ export default function VisitMaterialsScreen() {
   const closeSheet = () => {
     setSheetOpen(false);
     add.reset();
+    addCustom.reset();
   };
+  const addError = add.error ?? addCustom.error;
   const closeEditor = () => {
     setEditing(null);
     update.reset();
@@ -157,9 +159,10 @@ export default function VisitMaterialsScreen() {
         <AddMaterialSheet
           addedMaterialIds={list.materialIds}
           onDismiss={closeSheet}
-          isSubmitting={add.isPending}
-          error={add.error ? userErrorMessage(add.error) : null}
+          isSubmitting={add.isPending || addCustom.isPending}
+          error={addError ? userErrorMessage(addError) : null}
           onSubmit={(entry) => add.mutate(entry, { onSuccess: closeSheet })}
+          onSubmitCustom={(entry) => addCustom.mutate(entry, { onSuccess: closeSheet })}
         />
       ) : null}
 

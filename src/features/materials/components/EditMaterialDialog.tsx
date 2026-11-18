@@ -2,9 +2,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Controller, useForm } from 'react-hook-form';
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Button, Dialog, ErrorMessage, Input } from '@/components/ui';
+import { AppText, Badge, Button, Dialog, ErrorMessage, Input } from '@/components/ui';
 import type { VisitMaterial } from '@/models/material.model';
-import { spacing } from '@/theme';
+import { colors, spacing } from '@/theme';
 import { formatQuantity } from '@/utils/number.utils';
 
 import {
@@ -60,7 +60,11 @@ export function EditMaterialDialog({
       }
     >
       <View style={styles.material}>
-        <AppText variant="labelMedium">{material.materialCode}</AppText>
+        {material.isCustom ? (
+          <Badge label="Personalizado" color={colors.info} icon="edit-note" style={styles.badge} />
+        ) : (
+          <AppText variant="labelMedium">{material.materialCode}</AppText>
+        )}
         <AppText variant="titleMedium">{material.materialName}</AppText>
       </View>
 
@@ -107,5 +111,8 @@ export function EditMaterialDialog({
 const styles = StyleSheet.create({
   material: {
     gap: spacing.xs,
+  },
+  badge: {
+    alignSelf: 'flex-start',
   },
 });

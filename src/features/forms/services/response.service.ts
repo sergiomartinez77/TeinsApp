@@ -24,9 +24,40 @@ export interface FormResponseDatabase {
   writeTransaction: <T>(callback: (tx: FormResponseTransaction) => Promise<T>) => Promise<T>;
 }
 
-/** Respuesta de una visita: hay como máximo una por visita. */
+/**
+ * Primera respuesta de la visita (la más antigua). Antes había como máximo una
+ * por visita; se mantiene para abrir el formulario sin indicar plantilla.
+ */
 export const RESPONSE_BY_VISIT_SQL =
   'SELECT * FROM form_responses WHERE visit_id = ? ORDER BY created_at ASC LIMIT 1';
+
+/** Todas las respuestas (formularios) de la visita, de la más antigua a la más nueva. */
+export const VISIT_RESPONSES_SQL =
+  'SELECT * FROM form_responses WHERE visit_id = ? ORDER BY created_at ASC, id ASC';
+
+/**
+ * Clave de plantilla de una fila: la columna `template_key` y, en filas que
+ * aún no la tienen (creadas por una versión anterior de la app y todavía sin
+ * sincronizar), la misma regla que el servidor: `template_id` o la clave
+ * reservada `__template_key` del JSON.
+ */
+const ROW_TEMPLATE_KEY = `COALESCE(
+  template_key,
+  template_id,
+  CASE WHEN json_valid(responses) THEN json_extract(responses, '$.__template_key') END
+)`;
+
+/** Respuesta de la visita para una plantilla: hay como máximo una por visita y plantilla. */
+export const RESPONSE_BY_TEMPLATE_SQL = `SELECT * FROM form_responses
+WHERE visit_id = ? AND ${ROW_TEMPLATE_KEY} = ?
+ORDER BY created_at ASC, id ASC LIMIT 1`;
+
+/** Una respuesta concreta de la visita. */
+export const RESPONSE_BY_ID_SQL =
+  'SELECT * FROM form_responses WHERE id = ? AND visit_id = ? LIMIT 1';
+
+/** Si la visita ya tiene algún formulario. */
+const ANY_RESPONSE_FOR_VISIT_SQL = 'SELECT id FROM form_responses WHERE visit_id = ? LIMIT 1';
 
 /**
  * Visita del técnico y su estado: para no escribir en visitas ajenas o cerradas
@@ -44,6 +75,16 @@ export interface SaveFormResponseInput {
   visitId: string;
   template: Pick<FormTemplate, 'id' | 'version' | 'source'>;
   values: FormValues;
+  /**
+   * Respuesta que se está editando, si ya existe. Sin él se busca la de la
+   * visita con esa plantilla (y si no hay, se crea).
+   */
+  responseId?: string;
+}
+
+/** Clave de la plantilla que se guarda en `template_key`: el id de la base o el del asset. */
+export function templateKeyFor(template: Pick<FormTemplate, 'id'>): string {
+  return template.id;
 }
 
 /** Señal interna para deshacer la transacción con un error ya tipado. */
@@ -75,6 +116,7 @@ async function writeResponse(
   const timestamp = now.toISOString();
   const responses = serializeValues(input);
   const templateId = input.template.source === 'database' ? input.template.id : null;
+  const templateKey = templateKeyFor(input.template);
 
   try {
     const row = await db.writeTransaction(async (tx) => {
@@ -94,12 +136,26 @@ async function writeResponse(
         );
       }
 
-      // Se comprueba dentro de la transacción: nunca hay dos filas para la misma visita.
-      const existing = await tx.getOptional<Record<string, unknown>>(RESPONSE_BY_VISIT_SQL, [
-        input.visitId,
-      ]);
+      // Se comprueba dentro de la transacción: nunca hay dos filas para la misma
+      // visita y plantilla.
+      const byId = input.responseId
+        ? await tx.getOptional<Record<string, unknown>>(RESPONSE_BY_ID_SQL, [
+            input.responseId,
+            input.visitId,
+          ])
+        : null;
+      const existing =
+        byId ??
+        (await tx.getOptional<Record<string, unknown>>(RESPONSE_BY_TEMPLATE_SQL, [
+          input.visitId,
+          templateKey,
+        ]));
 
       if (!existing) {
+        // ¿Es el primer formulario de la visita? Solo ese queda registrado en la visita.
+        const previous = await tx.getOptional<Record<string, unknown>>(ANY_RESPONSE_FOR_VISIT_SQL, [
+          input.visitId,
+        ]);
         const id = generateId();
         const created: Record<string, unknown> = {
           id,
@@ -112,12 +168,13 @@ async function writeResponse(
           created_at: timestamp,
           updated_at: timestamp,
           completed_at: complete ? timestamp : null,
+          template_key: templateKey,
         };
         await tx.execute(
           `INSERT INTO form_responses (
              id, visit_id, template_id, template_version, responses,
-             sync_status, is_complete, created_at, updated_at, completed_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             sync_status, is_complete, created_at, updated_at, completed_at, template_key
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             input.visitId,
@@ -129,10 +186,14 @@ async function writeResponse(
             timestamp,
             timestamp,
             created.completed_at,
+            templateKey,
           ],
         );
-        // Primer guardado: la visita registra con qué plantilla (y versión) se llenó.
-        // Con plantilla de respaldo `form_template_id` no se toca (queda en NULL).
+        // Primer guardado del PRIMER formulario de la visita: la visita registra con
+        // qué plantilla (y versión) se llenó. Los formularios siguientes no lo
+        // sobrescriben. Con plantilla de respaldo `form_template_id` no se toca
+        // (queda en NULL).
+        if (previous) return created;
         if (templateId) {
           await tx.execute(
             `UPDATE visits
@@ -190,9 +251,9 @@ async function writeResponse(
 }
 
 /**
- * Guarda las respuestas del formulario de una visita.
- * La primera vez crea la fila; después la actualiza. Siempre queda pendiente
- * de sincronizar. Nunca lanza: los errores vuelven en el `Result`.
+ * Guarda las respuestas de un formulario de la visita (una fila por visita y
+ * plantilla). La primera vez crea la fila; después la actualiza. Siempre queda
+ * pendiente de sincronizar. Nunca lanza: los errores vuelven en el `Result`.
  */
 export function saveFormResponse(
   db: FormResponseDatabase,

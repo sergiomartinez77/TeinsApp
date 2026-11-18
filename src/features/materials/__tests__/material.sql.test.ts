@@ -165,6 +165,8 @@ describe('material.service contra SQLite real', () => {
         sync_status: 'pendingSync',
         created_at: NOW.toISOString(),
         updated_at: NOW.toISOString(),
+        // Material del catálogo (no personalizado).
+        is_custom: 0,
       },
     ]);
   });

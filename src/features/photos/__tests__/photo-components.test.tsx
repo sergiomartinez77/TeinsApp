@@ -27,6 +27,10 @@ const photo = (overrides: Partial<VisitPhoto> = {}): VisitPhoto => ({
   fileSizeBytes: 1000,
   width: 1920,
   height: 1080,
+  latitude: null,
+  longitude: null,
+  locationAccuracy: null,
+  takenAt: null,
   ...overrides,
 });
 

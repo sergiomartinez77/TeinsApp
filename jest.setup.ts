@@ -17,6 +17,21 @@ jest.mock('expo-image-picker', () => ({
   launchImageLibraryAsync: jest.fn(async () => ({ canceled: true, assets: null })),
 }));
 
+// Ubicación: por defecto sin permiso (la foto se guarda con "Ubicación no disponible").
+jest.mock('expo-location', () => ({
+  Accuracy: { Lowest: 1, Low: 2, Balanced: 3, High: 4, Highest: 5, BestForNavigation: 6 },
+  requestForegroundPermissionsAsync: jest.fn(async () => ({
+    granted: false,
+    status: 'denied',
+    canAskAgain: true,
+    expires: 'never',
+  })),
+  getLastKnownPositionAsync: jest.fn(async () => null),
+  getCurrentPositionAsync: jest.fn(async () => {
+    throw new Error('Ubicación no disponible en los tests');
+  }),
+}));
+
 jest.mock('expo-image-manipulator', () => ({
   SaveFormat: { JPEG: 'jpeg', PNG: 'png', WEBP: 'webp' },
   ImageManipulator: {

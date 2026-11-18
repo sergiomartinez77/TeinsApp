@@ -144,12 +144,20 @@ export function validateBuildEnv(
  * - CAMERA: fotografías de la visita (expo-image-picker).
  * - INTERNET: Supabase, PowerSync y subida de fotos.
  * - ACCESS_NETWORK_STATE: detectar la conexión (NetInfo) para sincronizar.
+ * - ACCESS_COARSE_LOCATION / ACCESS_FINE_LOCATION: coordenadas impresas en las
+ *   fotos (expo-location), solo mientras se usa la app.
  *
  * Las librerías añaden además, por su cuenta y con razón: ACCESS_WIFI_STATE
  * (NetInfo) y READ/WRITE_EXTERNAL_STORAGE limitados a Android ≤ 12
  * (maxSdkVersion=32), que el selector de galería pide en esas versiones.
  */
-export const ANDROID_PERMISSIONS = ['CAMERA', 'INTERNET', 'ACCESS_NETWORK_STATE'];
+export const ANDROID_PERMISSIONS = [
+  'CAMERA',
+  'INTERNET',
+  'ACCESS_NETWORK_STATE',
+  'ACCESS_COARSE_LOCATION',
+  'ACCESS_FINE_LOCATION',
+];
 
 /**
  * Permisos que añaden las librerías o la plantilla nativa y que la app no
@@ -167,6 +175,8 @@ export function blockedAndroidPermissions(environment: BuildEnvironment): string
     'android.permission.READ_MEDIA_AUDIO',
     'android.permission.READ_MEDIA_VISUAL_USER_SELECTED',
     'android.permission.ACCESS_MEDIA_LOCATION',
+    // Ubicación en segundo plano: la app solo la usa mientras está abierta.
+    'android.permission.ACCESS_BACKGROUND_LOCATION',
     // Acceso total al almacenamiento: nunca es necesario.
     'android.permission.MANAGE_EXTERNAL_STORAGE',
     // Vibración: la app no la usa (la plantilla de Expo la añade por defecto).
@@ -184,6 +194,8 @@ const CAMERA_PERMISSION_TEXT =
   'TEINS necesita la cámara para tomar fotografías de la visita técnica.';
 const PHOTOS_PERMISSION_TEXT =
   'TEINS necesita acceso a tus fotos para adjuntarlas a la visita técnica.';
+const LOCATION_PERMISSION_TEXT =
+  'TEINS usa tu ubicación mientras usas la app para imprimir las coordenadas en las fotografías de la visita.';
 
 /** Construye la configuración de Expo a partir de un entorno de procesos. */
 /** Proyecto de EAS de TEINS en expo.dev. */
@@ -258,6 +270,20 @@ export function buildExpoConfig(
           photosPermission: PHOTOS_PERMISSION_TEXT,
           // No se graban vídeos: no hace falta el micrófono.
           microphonePermission: false,
+        },
+      ],
+      [
+        'expo-location',
+        {
+          // Solo "mientras se usa la app": nunca en segundo plano.
+          locationWhenInUsePermission: LOCATION_PERMISSION_TEXT,
+          locationAlwaysAndWhenInUsePermission: false,
+          locationAlwaysPermission: false,
+          locationFullAccuracyPermission: false,
+          motionUsagePermission: false,
+          isIosBackgroundLocationEnabled: false,
+          isAndroidBackgroundLocationEnabled: false,
+          isAndroidForegroundServiceEnabled: false,
         },
       ],
       [

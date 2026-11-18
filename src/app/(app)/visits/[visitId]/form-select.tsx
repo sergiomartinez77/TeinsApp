@@ -1,20 +1,26 @@
-import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import type { ReactNode } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useMemo, type ReactNode } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
 import {
   AppText,
+  Button,
   ConnectivityBanner,
   EmptyState,
   ErrorScreen,
   LoadingScreen,
 } from '@/components/ui';
 import { TemplateCard } from '@/features/forms/components/TemplateCard';
-import { useFormResponse } from '@/features/forms/hooks/useFormResponse';
+import { VisitFormCard } from '@/features/forms/components/VisitFormCard';
 import { useFormTemplates } from '@/features/forms/hooks/useFormTemplates';
-import { sortTemplatesForSelector } from '@/features/forms/services/template.service';
+import { useVisitFormResponses } from '@/features/forms/hooks/useVisitForms';
+import {
+  addableTemplates,
+  buildVisitForms,
+  type VisitFormItem,
+} from '@/features/forms/services/visit-forms';
 import { useVisit } from '@/features/visits/hooks/useVisits';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
@@ -24,36 +30,54 @@ import { colors, contentWidths, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
 /**
- * Ruta `/visits/[visitId]/form-select` — elige la plantilla del formulario.
- * Si la visita ya tiene respuesta, se abre directamente con su plantilla.
+ * Ruta `/visits/[visitId]/form-select` — formularios de la visita.
+ *
+ * - Sin parámetros: lista de los formularios de la visita (plantilla, estado y
+ *   progreso) y botón "Agregar formulario".
+ * - `mode=add`: plantillas que aún no se usaron en la visita (primero las del
+ *   tipo de visita). Al elegir una se abre el formulario.
+ *
+ * Varios formularios por visita, como máximo uno por plantilla.
  */
 export default function FormSelectScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { visitId } = useLocalSearchParams<{ visitId: string }>();
+  const { visitId, mode } = useLocalSearchParams<{ visitId: string; mode?: string }>();
+  const adding = mode === 'add';
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
   const visitQuery = useVisit(user.id, visitId);
-  const responseQuery = useFormResponse(visitId);
+  const responsesQuery = useVisitFormResponses(visitId);
   const templatesQuery = useFormTemplates();
+  const { visit } = visitQuery;
+  const { catalog } = templatesQuery;
+  const { responses } = responsesQuery;
 
-  const bar = (
-    <AppBar title="Formulario técnico" bottom={<ConnectivityBanner isOnline={isOnline} />} />
+  const forms = useMemo(
+    () => (visit ? buildVisitForms(responses, catalog, visit.visitType) : []),
+    [catalog, responses, visit],
   );
+  const options = useMemo(
+    () => (visit ? addableTemplates(catalog, forms, visit.visitType) : []),
+    [catalog, forms, visit],
+  );
+
   const screen = (content: ReactNode) => (
     <View style={styles.screen}>
-      {bar}
+      <AppBar
+        title={adding ? 'Agregar formulario' : 'Formularios técnicos'}
+        bottom={<ConnectivityBanner isOnline={isOnline} />}
+      />
       {content}
     </View>
   );
 
-  if (visitQuery.isLoading || responseQuery.isLoading || templatesQuery.isLoading) {
+  if (visitQuery.isLoading || responsesQuery.isLoading || templatesQuery.isLoading) {
     return screen(<LoadingScreen message="Cargando formularios..." />);
   }
 
-  const { visit } = visitQuery;
-  const hasError = visitQuery.hasError || responseQuery.hasError || templatesQuery.hasError;
+  const hasError = visitQuery.hasError || responsesQuery.hasError || templatesQuery.hasError;
   if (hasError || !visit) {
     return screen(
       <ErrorScreen
@@ -62,12 +86,66 @@ export default function FormSelectScreen() {
     );
   }
 
-  // Una sola respuesta por visita: si ya existe no se elige otra plantilla.
-  if (responseQuery.response) {
-    return <Redirect href={{ pathname: '/visits/[visitId]/form', params: { visitId } }} />;
+  const editable = isEditable(visit);
+  const listStyle = [
+    styles.list,
+    {
+      paddingLeft: insets.left + spacing.screenHorizontal,
+      paddingRight: insets.right + spacing.screenHorizontal,
+      paddingBottom: insets.bottom + spacing.lg,
+    },
+  ];
+
+  if (adding) {
+    if (!editable) {
+      return screen(
+        <EmptyState
+          icon="lock"
+          message="La visita está cerrada"
+          hint="Ya no se pueden agregar formularios."
+        />,
+      );
+    }
+    // `replace`: al volver desde el formulario se regresa a la lista, no al selector.
+    const choose = (templateId: string) =>
+      router.replace({ pathname: '/visits/[visitId]/form', params: { visitId, templateId } });
+
+    return screen(
+      <FlatList
+        data={options}
+        keyExtractor={(option) => option.template.id}
+        renderItem={({ item }) => (
+          <TemplateCard template={item.template} recommended={item.recommended} onPress={choose} />
+        )}
+        ListHeaderComponent={
+          options.length > 0 ? (
+            <AppText variant="bodyMedium" color={colors.textSecondary}>
+              Elige la plantilla del nuevo formulario. Cada plantilla se usa una sola vez por
+              visita.
+            </AppText>
+          ) : undefined
+        }
+        ListEmptyComponent={
+          <EmptyState
+            icon="assignment"
+            message={
+              forms.length > 0
+                ? 'Ya agregaste todas las plantillas disponibles'
+                : 'No hay formularios disponibles'
+            }
+            hint={
+              forms.length > 0
+                ? 'Abre un formulario de la lista para seguir llenándolo.'
+                : 'Sincroniza cuando tengas conexión para recibir las plantillas.'
+            }
+          />
+        }
+        contentContainerStyle={listStyle}
+      />,
+    );
   }
 
-  if (!isEditable(visit)) {
+  if (!editable && forms.length === 0) {
     return screen(
       <EmptyState
         icon="lock"
@@ -77,41 +155,48 @@ export default function FormSelectScreen() {
     );
   }
 
-  const options = sortTemplatesForSelector(templatesQuery.catalog.available, visit.visitType);
-
-  // `replace`: al volver desde el formulario se regresa al detalle, no al selector.
-  const choose = (templateId: string) =>
-    router.replace({ pathname: '/visits/[visitId]/form', params: { visitId, templateId } });
+  // `push`: al volver desde el formulario se regresa a esta lista. Al salir, el
+  // autoguardado del formulario guarda lo pendiente: nunca se pierde progreso.
+  const open = (form: VisitFormItem) =>
+    router.push({
+      pathname: '/visits/[visitId]/form',
+      params: {
+        visitId,
+        responseId: form.response.id,
+        ...(form.template ? { templateId: form.template.id } : {}),
+      },
+    });
+  const add = () =>
+    router.push({ pathname: '/visits/[visitId]/form-select', params: { visitId, mode: 'add' } });
+  const canAdd = editable && options.length > 0;
 
   return screen(
     <FlatList
-      data={options}
-      keyExtractor={(option) => option.template.id}
-      renderItem={({ item }) => (
-        <TemplateCard template={item.template} recommended={item.recommended} onPress={choose} />
-      )}
+      data={forms}
+      keyExtractor={(form) => form.response.id}
+      renderItem={({ item }) => <VisitFormCard form={item} onPress={open} />}
       ListHeaderComponent={
-        options.length > 0 ? (
+        forms.length > 0 ? (
           <AppText variant="bodyMedium" color={colors.textSecondary}>
-            Elige la plantilla con la que vas a llenar el formulario de esta visita.
+            {editable
+              ? 'Toca un formulario para seguir donde lo dejaste.'
+              : 'La visita está cerrada: los formularios son de solo lectura.'}
           </AppText>
         ) : undefined
       }
       ListEmptyComponent={
         <EmptyState
           icon="assignment"
-          message="No hay formularios disponibles"
-          hint="Sincroniza cuando tengas conexión para recibir las plantillas."
+          message="Sin formularios"
+          hint="Toca “Agregar formulario” para elegir la plantilla del primero."
         />
       }
-      contentContainerStyle={[
-        styles.list,
-        {
-          paddingLeft: insets.left + spacing.screenHorizontal,
-          paddingRight: insets.right + spacing.screenHorizontal,
-          paddingBottom: insets.bottom + spacing.lg,
-        },
-      ]}
+      ListFooterComponent={
+        canAdd ? (
+          <Button label="Agregar formulario" icon="add" onPress={add} testID="add-form" />
+        ) : undefined
+      }
+      contentContainerStyle={listStyle}
     />,
   );
 }

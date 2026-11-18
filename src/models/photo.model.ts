@@ -60,6 +60,13 @@ export interface VisitPhoto {
   readonly fileSizeBytes: number | null;
   readonly width: number | null;
   readonly height: number | null;
+  /** Ubicación impresa en la foto (grados decimales); `null` = no disponible. */
+  readonly latitude: number | null;
+  readonly longitude: number | null;
+  /** Precisión de la ubicación, en metros. */
+  readonly locationAccuracy: number | null;
+  /** Fecha y hora impresa en la foto; `null` en fotos anteriores a la marca. */
+  readonly takenAt: string | null;
 }
 
 const text = (value: unknown): string =>
@@ -92,7 +99,16 @@ export function photoFromRow(row: Record<string, unknown>): VisitPhoto {
     fileSizeBytes: optionalNumber(row.file_size_bytes),
     width: optionalNumber(row.width),
     height: optionalNumber(row.height),
+    latitude: optionalNumber(row.latitude),
+    longitude: optionalNumber(row.longitude),
+    locationAccuracy: optionalNumber(row.location_accuracy),
+    takenAt: optionalText(row.taken_at),
   };
+}
+
+/** La foto tiene marca impresa (fotos tomadas desde la versión con marca). */
+export function hasStamp(photo: Pick<VisitPhoto, 'takenAt'>): boolean {
+  return photo.takenAt !== null;
 }
 
 export function photoSyncInfo(status: PhotoSyncStatus): PhotoSyncInfo {

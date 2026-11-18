@@ -8,7 +8,7 @@ import type { AppError } from '@/types/errors';
 import { scopedLogger } from '@/utils/logger';
 import { settleResult, unwrapResult as unwrap, userErrorMessage } from '@/utils/result.utils';
 
-import { captureImage, type PhotoSource } from '../services/photo-capture';
+import { captureImage, type PhotoSource, type StampRenderer } from '../services/photo-capture';
 import { devicePhotoFiles, discardFile } from '../services/photo-files';
 import { requestPhotoUpload } from '../services/photo-uploader';
 import { addPhoto, deletePhoto } from '../services/photo.service';
@@ -34,20 +34,38 @@ function showError(title: string, error: AppError): void {
   Alert.alert(title, message);
 }
 
+export interface PhotoActionsOptions {
+  /** Título de la visita: se imprime en la marca de la foto. */
+  visitTitle?: string;
+  /**
+   * Dibuja la marca (fecha, ubicación y visita) sobre la foto. Lo pasa la
+   * pantalla (`renderPhotoStamp`, con Skia); sin él, la foto no lleva marca.
+   */
+  renderStamp?: StampRenderer;
+}
+
 /**
  * Acciones sobre las fotos de una visita. Se guardan primero en el
  * dispositivo (funcionan sin conexión) y el gestor de subidas las envía.
  */
-export function usePhotoActions(visitId: string) {
+export function usePhotoActions(visitId: string, options: PhotoActionsOptions = {}) {
   const db = usePowerSync();
   const user = useRequiredUser();
+  const { visitTitle = '', renderStamp } = options;
 
   /** Toma o elige una foto. Devuelve `null` si el técnico canceló. */
   const capture = useMutation<VisitPhoto | null, AppError, PhotoSource>({
     mutationFn: async (source) => {
-      const image = await unwrap(captureImage(source));
+      const image = await unwrap(
+        captureImage(
+          source,
+          renderStamp ? { stamp: { visitTitle, render: renderStamp } } : undefined,
+        ),
+      );
       if (!image) return null;
-      const saved = await settleResult(addPhoto(db, devicePhotoFiles, user.id, { visitId, image }));
+      const saved = await settleResult(
+        addPhoto(db, devicePhotoFiles, user.id, { visitId, image, stamp: image.stamp }),
+      );
       // Si no se guardó, el JPEG temporal ya no sirve.
       if (!saved.ok) discardFile(image.uri);
       return unwrap(Promise.resolve(saved));

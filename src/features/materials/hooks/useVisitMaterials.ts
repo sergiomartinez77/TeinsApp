@@ -27,7 +27,10 @@ export function useVisitMaterials(visitId: string): VisitMaterialsResult {
   const materials = useMemo(() => result.data.map(visitMaterialFromRow), [result.data]);
   const summary = useMemo(() => summarizeMaterials(materials), [materials]);
   const materialIds = useMemo(
-    () => new Set(materials.map((material) => material.materialId)),
+    () =>
+      new Set(
+        materials.map((material) => material.materialId).filter((id): id is string => id !== null),
+      ),
     [materials],
   );
 

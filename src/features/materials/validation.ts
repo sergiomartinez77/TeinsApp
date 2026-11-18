@@ -62,3 +62,114 @@ export const materialEntrySchema = z.object({
 export type MaterialEntryFormValues = z.input<typeof materialEntrySchema>;
 /** Valores ya validados y normalizados. */
 export type MaterialEntryInput = z.output<typeof materialEntrySchema>;
+
+// ── Materiales personalizados (solo en la visita) ────────────────────────────
+
+/** Límites del nombre y la unidad escritos por el técnico (iguales en el servidor). */
+export const CUSTOM_MATERIAL_LIMITS = {
+  nameMax: 120,
+  unitMax: 20,
+} as const;
+
+/** Unidades que se ofrecen en el selector. */
+export const CUSTOM_UNITS = [
+  'unidad',
+  'metro',
+  'kg',
+  'litro',
+  'caja',
+  'rollo',
+  'par',
+  'juego',
+  'global',
+] as const;
+
+/** Valor del selector que permite escribir otra unidad. */
+export const CUSTOM_UNIT_OTHER = 'otra';
+
+export const CUSTOM_UNIT_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: 'unidad', label: 'Unidad' },
+  { value: 'metro', label: 'Metro' },
+  { value: 'kg', label: 'Kilogramo (kg)' },
+  { value: 'litro', label: 'Litro' },
+  { value: 'caja', label: 'Caja' },
+  { value: 'rollo', label: 'Rollo' },
+  { value: 'par', label: 'Par' },
+  { value: 'juego', label: 'Juego' },
+  { value: 'global', label: 'Global' },
+  { value: CUSTOM_UNIT_OTHER, label: 'Otra (escribirla)' },
+];
+
+export const CUSTOM_MATERIAL_MESSAGES = {
+  nameRequired: 'Escribe el nombre del material.',
+  nameTooLong: `El nombre no puede superar los ${CUSTOM_MATERIAL_LIMITS.nameMax} caracteres.`,
+  unitRequired: 'Elige la unidad.',
+  otherUnitRequired: 'Escribe la unidad.',
+  unitTooLong: `La unidad no puede superar los ${CUSTOM_MATERIAL_LIMITS.unitMax} caracteres.`,
+} as const;
+
+/** Quita espacios al principio y al final y deja uno solo entre palabras. */
+export function normalizeCustomText(value: string): string {
+  return value.normalize('NFC').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Clave para detectar personalizados repetidos en la visita: mismo nombre y
+ * misma unidad sin distinguir mayúsculas ni espacios.
+ */
+export function customMaterialKey(name: string, unit: string): string {
+  const key = (value: string) => normalizeCustomText(value).toLocaleLowerCase('es');
+  return `${key(name)}\u0000${key(unit)}`;
+}
+
+/** Error del nombre ya normalizado, o `null`. */
+export function customNameError(name: string): string | null {
+  if (!name) return CUSTOM_MATERIAL_MESSAGES.nameRequired;
+  if (name.length > CUSTOM_MATERIAL_LIMITS.nameMax) return CUSTOM_MATERIAL_MESSAGES.nameTooLong;
+  return null;
+}
+
+/** Error de la unidad ya normalizada, o `null`. */
+export function customUnitError(unit: string): string | null {
+  if (!unit) return CUSTOM_MATERIAL_MESSAGES.otherUnitRequired;
+  if (unit.length > CUSTOM_MATERIAL_LIMITS.unitMax) return CUSTOM_MATERIAL_MESSAGES.unitTooLong;
+  return null;
+}
+
+/** Formulario "Agregar material que no está en el catálogo". */
+export const customMaterialSchema = z
+  .object({
+    name: z.string(),
+    unit: z.string(),
+    otherUnit: z.string(),
+    quantity: quantitySchema,
+    observations: observationsSchema,
+  })
+  .superRefine((values, ctx) => {
+    const nameError = customNameError(normalizeCustomText(values.name));
+    if (nameError) ctx.addIssue({ code: 'custom', path: ['name'], message: nameError });
+    if (!values.unit) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['unit'],
+        message: CUSTOM_MATERIAL_MESSAGES.unitRequired,
+      });
+    } else if (values.unit === CUSTOM_UNIT_OTHER) {
+      const unitError = customUnitError(normalizeCustomText(values.otherUnit));
+      if (unitError) ctx.addIssue({ code: 'custom', path: ['otherUnit'], message: unitError });
+    }
+  })
+  .transform((values) => ({
+    name: normalizeCustomText(values.name),
+    unit:
+      values.unit === CUSTOM_UNIT_OTHER
+        ? normalizeCustomText(values.otherUnit)
+        : normalizeCustomText(values.unit),
+    quantity: values.quantity,
+    observations: values.observations,
+  }));
+
+/** Valores del formulario de material personalizado tal como los escribe el técnico. */
+export type CustomMaterialFormValues = z.input<typeof customMaterialSchema>;
+/** Material personalizado ya validado: nombre y unidad normalizados. */
+export type CustomMaterialInput = z.output<typeof customMaterialSchema>;

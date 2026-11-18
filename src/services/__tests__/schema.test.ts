@@ -2,7 +2,7 @@ import { appSchema } from '../powersync/schema';
 
 const COMMON = ['created_at', 'updated_at'];
 
-/** Columnas de cada tabla en PostgreSQL (migración 001), sin `id`. */
+/** Columnas de cada tabla en PostgreSQL (migración 001 y las 20261118*), sin `id`. */
 const SERVER_COLUMNS: Record<string, string[]> = {
   profiles: ['email', 'full_name', 'role', 'phone', 'avatar_url', 'is_active', ...COMMON],
   visit_types: ['name', 'description', 'icon', 'is_active', ...COMMON],
@@ -29,6 +29,7 @@ const SERVER_COLUMNS: Record<string, string[]> = {
   form_responses: [
     'visit_id',
     'template_id',
+    'template_key',
     'template_version',
     'responses',
     'sync_status',
@@ -40,6 +41,7 @@ const SERVER_COLUMNS: Record<string, string[]> = {
   visit_materials: [
     'visit_id',
     'material_id',
+    'is_custom',
     'material_code',
     'material_name',
     'unit',
@@ -61,6 +63,10 @@ const SERVER_COLUMNS: Record<string, string[]> = {
     'height',
     'captured_at',
     'uploaded_at',
+    'latitude',
+    'longitude',
+    'location_accuracy',
+    'taken_at',
   ],
   annotations: [
     'visit_id',
@@ -110,5 +116,41 @@ describe('esquema local de PowerSync', () => {
     for (const [name, table] of tables) {
       expect(table.localOnly).toBe(name === 'sync_issues');
     }
+  });
+});
+
+describe('columnas nuevas (migraciones 20261118*)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const fs: typeof import('node:fs') = require('node:fs');
+  const path: typeof import('node:path') = require('node:path');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const root = path.resolve(__dirname, '..', '..', '..');
+  const migrations = fs
+    .readdirSync(path.join(root, 'supabase', 'migrations'))
+    .filter((name) => name.startsWith('20261118'))
+    .map((name) => fs.readFileSync(path.join(root, 'supabase', 'migrations', name), 'utf8'))
+    .join('\n');
+  const syncConfig = fs.readFileSync(path.join(root, 'powersync', 'sync-config.yaml'), 'utf8');
+
+  it.each([
+    ['photos', 'latitude'],
+    ['photos', 'longitude'],
+    ['photos', 'location_accuracy'],
+    ['photos', 'taken_at'],
+    ['visit_materials', 'is_custom'],
+    ['form_responses', 'template_key'],
+  ])('%s.%s existe en el servidor (migración) y en el esquema local', (table, column) => {
+    const statement = `ALTER TABLE public.${table}`;
+    const column_ = `ADD COLUMN IF NOT EXISTS ${column} `;
+    const at = migrations.indexOf(statement);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(migrations.indexOf(column_, at)).toBeGreaterThan(at);
+    expect(appSchema.tables.find((t) => t.name === table)?.columns.map((c) => c.name)).toContain(
+      column,
+    );
+  });
+
+  it('la consulta de visit_materials de PowerSync incluye is_custom', () => {
+    expect(syncConfig).toMatch(/SELECT id, visit_id, material_id, is_custom,/);
   });
 });

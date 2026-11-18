@@ -8,6 +8,7 @@ import {
   photoFromRow,
   photoSyncInfo,
   type PhotoSyncStatus,
+  hasStamp,
 } from '../photo.model';
 
 describe('photoFromRow', () => {
@@ -42,7 +43,34 @@ describe('photoFromRow', () => {
       fileSizeBytes: 123456,
       width: 1920,
       height: 1080,
+      // Foto anterior a la marca impresa: sin ubicación ni hora impresa.
+      latitude: null,
+      longitude: null,
+      locationAccuracy: null,
+      takenAt: null,
     });
+  });
+
+  it('lee la ubicación, la precisión y la hora impresas (marca)', () => {
+    const photo = photoFromRow({
+      id: 'p2',
+      visit_id: 'v1',
+      local_path: 'teins_photos/p2.jpg',
+      sync_status: 'local',
+      captured_at: '2026-06-01T08:00:00.000Z',
+      latitude: -3.993421,
+      longitude: '-79.204512',
+      location_accuracy: 8,
+      taken_at: '2026-06-01T07:59:58.000Z',
+    });
+    expect(photo).toMatchObject({
+      latitude: -3.993421,
+      longitude: -79.204512,
+      locationAccuracy: 8,
+      takenAt: '2026-06-01T07:59:58.000Z',
+    });
+    expect(hasStamp(photo)).toBe(true);
+    expect(hasStamp({ takenAt: null })).toBe(false);
   });
 
   it('usa valores por defecto con columnas vacías o desconocidas', () => {

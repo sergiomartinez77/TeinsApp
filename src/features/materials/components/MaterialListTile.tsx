@@ -1,6 +1,6 @@
 import { StyleSheet, View } from 'react-native';
 
-import { AppText, Card, IconButton } from '@/components/ui';
+import { AppText, Badge, Card, IconButton } from '@/components/ui';
 import { formatQuantityWithUnit, type VisitMaterial } from '@/models/material.model';
 import { colors, spacing } from '@/theme';
 
@@ -12,7 +12,12 @@ export interface MaterialListTileProps {
   onRemove: (material: VisitMaterial) => void;
 }
 
-/** Material de la visita: código, nombre, cantidad con unidad y observaciones. */
+export const CUSTOM_MATERIAL_LABEL = 'Personalizado';
+
+/**
+ * Material de la visita: código (o la marca "Personalizado" si no está en el
+ * catálogo), nombre, cantidad con unidad y observaciones.
+ */
 export function MaterialListTile({ material, readOnly, onEdit, onRemove }: MaterialListTileProps) {
   const quantity = formatQuantityWithUnit(material.quantity, material.unit);
 
@@ -25,14 +30,24 @@ export function MaterialListTile({ material, readOnly, onEdit, onRemove }: Mater
           accessibilityRole="text"
           accessibilityLabel={[
             material.materialName,
-            `código ${material.materialCode}`,
+            material.isCustom ? 'material personalizado' : `código ${material.materialCode}`,
             quantity,
             material.observations,
           ]
             .filter(Boolean)
             .join(', ')}
         >
-          <AppText variant="labelMedium">{material.materialCode}</AppText>
+          {material.isCustom ? (
+            <Badge
+              label={CUSTOM_MATERIAL_LABEL}
+              color={colors.info}
+              icon="edit-note"
+              testID={`material-${material.id}-custom`}
+              style={styles.badge}
+            />
+          ) : (
+            <AppText variant="labelMedium">{material.materialCode}</AppText>
+          )}
           <AppText variant="titleMedium">{material.materialName}</AppText>
           <AppText variant="bodyLarge" color={colors.primary} style={styles.quantity}>
             {quantity}
@@ -75,6 +90,9 @@ const styles = StyleSheet.create({
   },
   quantity: {
     fontWeight: '600',
+  },
+  badge: {
+    alignSelf: 'flex-start',
   },
   actions: {
     flexDirection: 'row',

@@ -10,6 +10,7 @@ const material = (overrides: Partial<VisitMaterial> = {}): VisitMaterial => ({
   id: 'vm1',
   visitId: 'v1',
   materialId: 'm1',
+  isCustom: false,
   materialCode: 'CAB-001',
   materialName: 'Cable UTP Cat6',
   unit: 'metro',
@@ -84,14 +85,44 @@ describe('visitMaterialFromRow', () => {
   });
 });
 
+describe('visitMaterialFromRow: material personalizado', () => {
+  it('sin material_id y con is_custom = 1', () => {
+    expect(
+      visitMaterialFromRow({
+        id: 'vm9',
+        visit_id: 'v1',
+        material_id: null,
+        is_custom: 1,
+        material_code: 'PERSONALIZADO',
+        material_name: 'Abrazadera',
+        unit: 'bolsa',
+        quantity: 2,
+      }),
+    ).toMatchObject({ materialId: null, isCustom: true, materialName: 'Abrazadera' });
+    expect(visitMaterialFromRow({ id: 'vm1', material_id: 'm1' }).isCustom).toBe(false);
+  });
+});
+
 describe('summarizeMaterials', () => {
   it('sin materiales devuelve conteo cero', () => {
     expect(summarizeMaterials([])).toEqual({
       count: 0,
       countLabel: '0 materiales',
+      customCount: 0,
+      customLabel: '',
       totals: [],
       totalsLabel: '',
     });
+  });
+
+  it('cuenta los materiales personalizados (singular y plural)', () => {
+    const one = summarizeMaterials([material(), material({ id: 'vm2', isCustom: true })]);
+    expect(one).toMatchObject({ customCount: 1, customLabel: '1 personalizado' });
+    const two = summarizeMaterials([
+      material({ isCustom: true }),
+      material({ id: 'vm2', isCustom: true }),
+    ]);
+    expect(two.customLabel).toBe('2 personalizados');
   });
 
   it('usa singular con un material', () => {

@@ -156,6 +156,34 @@ describe('blockedAndroidPermissions', () => {
   });
 });
 
+describe('ubicación de las fotos (expo-location)', () => {
+  it('bloquea la ubicación en segundo plano', () => {
+    for (const env of ['development', 'staging', 'production'] as const) {
+      expect(blockedAndroidPermissions(env)).toContain(
+        'android.permission.ACCESS_BACKGROUND_LOCATION',
+      );
+    }
+  });
+
+  it('configura el plugin solo "mientras se usa la app", con el texto en español', () => {
+    const config = build(FULL_ENV);
+    const plugin = config.plugins?.find(
+      (entry) => Array.isArray(entry) && entry[0] === 'expo-location',
+    );
+    expect(plugin).toEqual([
+      'expo-location',
+      expect.objectContaining({
+        locationWhenInUsePermission: expect.stringContaining('mientras usas la app'),
+        locationAlwaysAndWhenInUsePermission: false,
+        locationAlwaysPermission: false,
+        isIosBackgroundLocationEnabled: false,
+        isAndroidBackgroundLocationEnabled: false,
+        isAndroidForegroundServiceEnabled: false,
+      }),
+    ]);
+  });
+});
+
 describe('buildExpoConfig', () => {
   it('desarrollo: variante Dev y extra con las variables', () => {
     const config = build({ ...FULL_ENV, APP_ENV: 'development', LOG_LEVEL: 'debug' });
@@ -223,7 +251,13 @@ describe('buildExpoConfig', () => {
 
   it('declara solo los permisos necesarios y bloquea los demás', () => {
     const config = build({ ...FULL_ENV, APP_ENV: 'staging' });
-    expect(config.android?.permissions).toEqual(['CAMERA', 'INTERNET', 'ACCESS_NETWORK_STATE']);
+    expect(config.android?.permissions).toEqual([
+      'CAMERA',
+      'INTERNET',
+      'ACCESS_NETWORK_STATE',
+      'ACCESS_COARSE_LOCATION',
+      'ACCESS_FINE_LOCATION',
+    ]);
     expect(config.android?.blockedPermissions).toEqual(blockedAndroidPermissions('staging'));
   });
 });

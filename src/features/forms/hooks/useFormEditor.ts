@@ -25,6 +25,8 @@ export interface UseFormEditorOptions {
   /** Técnico de la sesión: solo se escribe en sus propias visitas. */
   technicianId: string;
   template: FormTemplate;
+  /** Respuesta que se edita, si ya existe (varios formularios por visita). */
+  responseId?: string;
   /** Respuestas ya guardadas; solo se usan al abrir el formulario. */
   initialValues: FormValues;
   readOnly: boolean;
@@ -40,6 +42,7 @@ export function useFormEditor({
   visitId,
   technicianId,
   template,
+  responseId,
   initialValues,
   readOnly,
 }: UseFormEditorOptions) {
@@ -61,8 +64,13 @@ export function useFormEditor({
   const { errors } = useFormState({ control });
 
   const toInput = useCallback(
-    (draft: FormDraft) => ({ visitId, template, values: draftToValues(template, draft) }),
-    [visitId, template],
+    (draft: FormDraft) => ({
+      visitId,
+      template,
+      responseId,
+      values: draftToValues(template, draft),
+    }),
+    [visitId, template, responseId],
   );
 
   const save = useCallback(

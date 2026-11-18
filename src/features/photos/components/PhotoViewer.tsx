@@ -17,6 +17,7 @@ import { photoSyncInfo, type VisitPhoto } from '@/models/photo.model';
 import { colors, spacing, withAlpha } from '@/theme';
 
 import { usePhotoSource } from '../hooks/usePhotoSource';
+import { stampDetails } from '../services/photo-stamp';
 
 import { SyncDot } from './SyncDot';
 import { ZoomableImage } from './ZoomableImage';
@@ -41,7 +42,8 @@ export interface PhotoViewerProps {
 /**
  * Visor a pantalla completa: deslizamiento horizontal entre fotos, zoom con
  * pellizco y doble toque, contador, botón de eliminar (si la visita es
- * editable) y pie con el texto de la foto y su estado de subida.
+ * editable) y pie con el texto de la foto, la fecha y ubicación impresas en
+ * ella (si tiene marca) y su estado de subida.
  */
 export function PhotoViewer({
   photos,
@@ -59,6 +61,7 @@ export function PhotoViewer({
 
   const currentIndex = Math.max(0, Math.min(index, photos.length - 1));
   const current = photos[currentIndex];
+  const details = current ? stampDetails(current) : null;
 
   const handleScrollEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const next = Math.round(event.nativeEvent.contentOffset.x / width);
@@ -156,6 +159,28 @@ export function PhotoViewer({
               <AppText variant="bodyLarge" color={colors.textInverse}>
                 {current.caption}
               </AppText>
+            ) : null}
+            {details ? (
+              <View
+                style={styles.stamp}
+                accessible
+                accessibilityRole="text"
+                accessibilityLabel={`Tomada el ${details.dateTime}. ${details.location}`}
+                testID="photo-viewer-stamp"
+              >
+                <View style={styles.status}>
+                  <Icon name="schedule" size={18} color={colors.textInverse} />
+                  <AppText variant="bodyMedium" color={colors.textInverse}>
+                    {details.dateTime}
+                  </AppText>
+                </View>
+                <View style={styles.status}>
+                  <Icon name="place" size={18} color={colors.textInverse} />
+                  <AppText variant="bodyMedium" color={colors.textInverse} style={styles.flex}>
+                    {details.location}
+                  </AppText>
+                </View>
+              </View>
             ) : null}
             <View style={styles.status}>
               <SyncDot status={current.syncStatus} />
@@ -255,6 +280,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+  },
+  stamp: {
+    gap: spacing.xs,
+  },
+  flex: {
+    flex: 1,
   },
   unavailable: {
     alignItems: 'center',

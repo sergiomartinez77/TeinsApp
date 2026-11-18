@@ -15,6 +15,12 @@
  *      `SET ROLE` + claims del JWT y comprueba las políticas RLS con
  *      aserciones, reproduciendo las escrituras que hace la app (upsert de
  *      PostgREST = INSERT ... ON CONFLICT DO UPDATE, update y delete).
+ *   4. Mejoras de noviembre de 2026 (migraciones 20261118*): restricciones y RLS
+ *      de fotos con ubicación, materiales personalizados y varios formularios
+ *      por visita; y, en una base aparte, la actualización de un proyecto que
+ *      ya tiene datos (se aplican primero las migraciones antiguas, se cargan
+ *      filas y después las nuevas dos veces: los datos se conservan y se
+ *      transforman).
  *
  * No se conecta a ningún servicio externo. PGlite se usa desde
  * node_modules si está instalado; si no, se instala UNA vez en una carpeta
@@ -634,7 +640,9 @@ async function main() {
   r = await as(db, T1, (tx) => tx.query(`DELETE FROM storage.objects WHERE name = $1`, [path]));
   check(ok(r) && r.value.affectedRows === 0, 'Técnico NO borra objetos remotos');
 
-  section('13. Estructura, funciones y PowerSync');
+  await validateImprovementsRls(db, { T1, T2, OFF, V1, T2_VISIT, now });
+
+  section('16. Estructura, funciones y PowerSync');
   const meta = await as(db, {}, async (tx) => ({
     noRls: (
       await tx.query(
@@ -733,6 +741,8 @@ async function main() {
     'PGlite no hace replicación lógica real (wal_level, slots): la conexión de PowerSync solo se puede probar contra Supabase.',
   );
 
+  await validateUpgradeWithExistingData(PGlite);
+
   // ── Resumen ──
   console.log(`\nResultado: ${passed} comprobaciones correctas, ${failures.length} fallidas.`);
   for (const note of notes) console.log(`Nota: ${note}`);
@@ -742,6 +752,481 @@ async function main() {
     for (const f of failures) console.log(`  ✗ ${f}`);
     process.exitCode = 1;
   }
+}
+
+// ── Mejoras de noviembre de 2026 (migraciones 20261118*) ───────────────────
+
+const NEW_MIGRATIONS_PREFIX = '20261118';
+const violates = (result, name) =>
+  result.error !== null && new RegExp(name, 'i').test(result.error.message);
+
+/**
+ * Restricciones nuevas y RLS de las tres mejoras sobre la base ya migrada:
+ * fotos con ubicación, materiales personalizados y varios formularios.
+ */
+async function validateImprovementsRls(db, { T1, T2, OFF, V1, T2_VISIT, now }) {
+  section('13. Fotos con marca de tiempo y ubicación');
+  const photo = {
+    id: '70000000-0000-4000-8000-000000000001',
+    visit_id: V1,
+    form_field_id: null,
+    local_path: 'teins_photos/marca.jpg',
+    storage_path: null,
+    storage_url: null,
+    caption: null,
+    sync_status: 'local',
+    captured_at: now,
+    uploaded_at: null,
+    file_size_bytes: 1000,
+    width: 1920,
+    height: 1080,
+    latitude: -3.993421,
+    longitude: -79.204512,
+    location_accuracy: 8,
+    taken_at: now,
+  };
+  let r = await as(db, T1, (tx) => upsert(tx, 'photos', photo));
+  check(ok(r), 'Técnico sube una foto con coordenadas, precisión y hora impresa', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query(
+      'SELECT latitude, longitude, location_accuracy, taken_at FROM public.photos WHERE id = $1',
+      [photo.id],
+    ),
+  );
+  const storedPhoto = r.value?.rows[0];
+  check(
+    storedPhoto?.latitude === -3.993421 &&
+      storedPhoto?.longitude === -79.204512 &&
+      storedPhoto?.location_accuracy === 8 &&
+      storedPhoto?.taken_at instanceof Date,
+    'Las columnas de ubicación conservan los valores (DOUBLE PRECISION y TIMESTAMPTZ)',
+    JSON.stringify(storedPhoto),
+  );
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'photos', {
+      ...photo,
+      id: '70000000-0000-4000-8000-000000000002',
+      latitude: null,
+      longitude: null,
+      location_accuracy: null,
+    }),
+  );
+  check(ok(r), 'Foto sin ubicación ("Ubicación no disponible"): se acepta con NULL', errMsg(r));
+  for (const [label, changes] of [
+    ['latitud fuera de rango', { latitude: 95 }],
+    ['longitud fuera de rango', { longitude: -181 }],
+    ['solo latitud, sin longitud', { longitude: null }],
+    ['precisión negativa', { location_accuracy: -1 }],
+  ]) {
+    r = await as(db, T1, (tx) =>
+      upsert(tx, 'photos', { ...photo, id: '70000000-0000-4000-8000-000000000003', ...changes }),
+    );
+    check(violates(r, 'chk_photo_location'), `Se rechaza una foto con ${label}`, errMsg(r));
+  }
+
+  section('14. Materiales personalizados (solo en la visita)');
+  const custom = {
+    id: '70000000-0000-4000-8000-000000000010',
+    visit_id: V1,
+    material_id: null,
+    is_custom: true,
+    material_code: 'PERSONALIZADO',
+    material_name: 'Abrazadera especial',
+    unit: 'unidad',
+    quantity: 3,
+    observations: null,
+    sync_status: 'synced',
+    created_at: now,
+    updated_at: now,
+  };
+  r = await as(db, T1, (tx) => upsert(tx, 'visit_materials', custom));
+  check(ok(r), 'Técnico agrega un material personalizado a su visita (upsert)', errMsg(r));
+  r = await as(db, T1, (tx) => upsert(tx, 'visit_materials', { ...custom, quantity: 4 }));
+  check(ok(r), 'Técnico repite el upsert del personalizado (UPDATE vía ON CONFLICT)', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query(`UPDATE public.visit_materials SET quantity = 5, observations = 'x' WHERE id = $1`, [
+      custom.id,
+    ]),
+  );
+  check(ok(r) && r.value.affectedRows === 1, 'Técnico edita su material personalizado (PATCH)');
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'visit_materials', {
+      ...custom,
+      id: '70000000-0000-4000-8000-000000000011',
+      material_name: '  ABRAZADERA especial ',
+    }),
+  );
+  check(
+    violates(r, 'uq_visit_material_custom'),
+    'Dos personalizados con el mismo nombre y unidad en la visita: se rechaza',
+    errMsg(r),
+  );
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'visit_materials', {
+      ...custom,
+      id: '70000000-0000-4000-8000-000000000012',
+      unit: 'caja',
+    }),
+  );
+  check(ok(r), 'Mismo nombre con otra unidad: se acepta', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'visit_materials', {
+      ...custom,
+      id: '70000000-0000-4000-8000-000000000013',
+      material_id: '40000000-0000-4000-8000-000000000001',
+    }),
+  );
+  check(
+    violates(r, 'chk_visit_material_source'),
+    'Un personalizado no puede apuntar al catálogo',
+    errMsg(r),
+  );
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'visit_materials', {
+      ...custom,
+      id: '70000000-0000-4000-8000-000000000014',
+      is_custom: false,
+    }),
+  );
+  check(
+    violates(r, 'chk_visit_material_source'),
+    'Un material del catálogo sin material_id se rechaza',
+    errMsg(r),
+  );
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'visit_materials', {
+      ...custom,
+      id: '70000000-0000-4000-8000-000000000015',
+      material_name: '   ',
+    }),
+  );
+  check(
+    violates(r, 'chk_visit_material_custom_text'),
+    'Un personalizado sin nombre se rechaza',
+    errMsg(r),
+  );
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'visit_materials', {
+      ...custom,
+      id: '70000000-0000-4000-8000-000000000016',
+      material_name: 'Otro',
+      unit: 'x'.repeat(21),
+    }),
+  );
+  check(
+    violates(r, 'chk_visit_material_custom_text'),
+    'Un personalizado con unidad de más de 20 caracteres se rechaza',
+    errMsg(r),
+  );
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'visit_materials', {
+      id: '70000000-0000-4000-8000-000000000017',
+      visit_id: V1,
+      material_id: '40000000-0000-4000-8000-000000000001',
+      material_code: 'CABLE-UTP-CAT6',
+      material_name: 'Cable UTP Cat6',
+      unit: 'metro',
+      quantity: 2,
+      observations: null,
+      sync_status: 'synced',
+      created_at: now,
+      updated_at: now,
+    }),
+  );
+  check(
+    ok(r),
+    'Un material del catálogo sin is_custom (app anterior) sigue funcionando',
+    errMsg(r),
+  );
+  r = await as(db, T2, (tx) =>
+    upsert(tx, 'visit_materials', { ...custom, id: '70000000-0000-4000-8000-000000000018' }),
+  );
+  check(denied(r), 'Técnico 2 NO agrega personalizados en una visita ajena', errMsg(r));
+  r = await as(db, T2, (tx) =>
+    tx.query(`UPDATE public.visit_materials SET quantity = 9 WHERE id = $1`, [custom.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico 2 NO edita personalizados ajenos');
+  r = await as(db, T2, (tx) =>
+    tx.query(`DELETE FROM public.visit_materials WHERE id = $1`, [custom.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico 2 NO borra personalizados ajenos');
+  r = await as(db, T2, (tx) =>
+    upsert(tx, 'visit_materials', {
+      ...custom,
+      id: '70000000-0000-4000-8000-000000000019',
+      visit_id: T2_VISIT,
+    }),
+  );
+  check(ok(r), 'Técnico 2 agrega el mismo personalizado en SU visita (no choca)', errMsg(r));
+  r = await as(db, OFF, (tx) => count(tx, 'SELECT 1 FROM public.visit_materials WHERE is_custom'));
+  check(r.value === 3, 'Oficina lee los materiales personalizados de todos', `${r.value}`);
+  r = await as(db, T1, (tx) =>
+    tx.query(`DELETE FROM public.visit_materials WHERE id = $1`, [custom.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 1, 'Técnico quita su material personalizado');
+  r = await as(db, T1, (tx) =>
+    count(tx, 'SELECT 1 FROM public.material_catalog WHERE code = $1', ['PERSONALIZADO']),
+  );
+  check(r.value === 0, 'El catálogo no cambia: no se crean materiales de catálogo');
+
+  section('15. Varios formularios por visita (uno por plantilla)');
+  const base = {
+    visit_id: V1,
+    template_version: 1,
+    sync_status: 'synced',
+    is_complete: false,
+    created_at: now,
+    updated_at: now,
+    completed_at: null,
+  };
+  const assetForm = {
+    ...base,
+    id: '70000000-0000-4000-8000-000000000020',
+    template_id: null,
+    template_key: 'ups_cdp_v1',
+    responses: JSON.stringify({ equipo: 'UPS', __template_key: 'ups_cdp_v1' }),
+  };
+  r = await as(db, T1, (tx) => upsert(tx, 'form_responses', assetForm));
+  check(ok(r), 'Segundo formulario en la misma visita con otra plantilla (asset)', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    count(tx, 'SELECT 1 FROM public.form_responses WHERE visit_id = $1', [V1]),
+  );
+  check(r.value === 2, 'La visita tiene 2 formularios', `${r.value}`);
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'form_responses', {
+      ...assetForm,
+      id: '70000000-0000-4000-8000-000000000021',
+    }),
+  );
+  check(
+    violates(r, 'uq_form_response_visit_template'),
+    'Un segundo formulario con la MISMA plantilla en la visita se rechaza',
+    errMsg(r),
+  );
+  // App anterior: no envía template_key → el trigger lo calcula.
+  r = await as(db, T1, async (tx) => {
+    await upsert(tx, 'form_responses', {
+      ...base,
+      id: '70000000-0000-4000-8000-000000000022',
+      template_id: '10000000-0000-4000-8000-000000000002',
+      responses: JSON.stringify({ a: 1 }),
+    });
+    await upsert(tx, 'form_responses', {
+      ...base,
+      id: '70000000-0000-4000-8000-000000000023',
+      template_id: null,
+      responses: JSON.stringify({ b: 2, __template_key: 'teins_visita_v1' }),
+    });
+    return (
+      await tx.query(
+        `SELECT id, template_key FROM public.form_responses
+         WHERE id IN ('70000000-0000-4000-8000-000000000022', '70000000-0000-4000-8000-000000000023')
+         ORDER BY id`,
+      )
+    ).rows.map((row) => row.template_key);
+  });
+  check(
+    ok(r) &&
+      JSON.stringify(r.value) ===
+        JSON.stringify(['10000000-0000-4000-8000-000000000002', 'teins_visita_v1']),
+    'Sin template_key (app anterior) se calcula desde template_id o __template_key',
+    `${JSON.stringify(r.value)} ${errMsg(r)}`,
+  );
+  r = await as(db, T1, async (tx) => {
+    await upsert(tx, 'form_responses', { ...assetForm, template_key: null, is_complete: true });
+    return (
+      await tx.query('SELECT template_key, is_complete FROM public.form_responses WHERE id = $1', [
+        assetForm.id,
+      ])
+    ).rows[0];
+  });
+  check(
+    ok(r) && r.value?.template_key === 'ups_cdp_v1' && r.value?.is_complete === true,
+    'Un upsert con template_key NULL no borra la clave (se vuelve a calcular)',
+    `${JSON.stringify(r.value)} ${errMsg(r)}`,
+  );
+  r = await as(db, T2, (tx) =>
+    upsert(tx, 'form_responses', {
+      ...assetForm,
+      id: '70000000-0000-4000-8000-000000000024',
+      template_key: 'otra',
+    }),
+  );
+  check(denied(r), 'Técnico 2 NO agrega formularios en una visita ajena', errMsg(r));
+  r = await as(db, T2, (tx) =>
+    upsert(tx, 'form_responses', {
+      ...assetForm,
+      id: '70000000-0000-4000-8000-000000000025',
+      visit_id: T2_VISIT,
+    }),
+  );
+  check(ok(r), 'Técnico 2 usa la misma plantilla en SU visita (no choca)', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query('DELETE FROM public.form_responses WHERE id = $1', [assetForm.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico sigue sin poder borrar formularios');
+}
+
+/**
+ * Actualización de un proyecto que YA tiene datos: se aplican solo las
+ * migraciones anteriores, se cargan filas como las de producción y después
+ * las migraciones nuevas (dos veces). Las filas deben conservarse y
+ * transformarse sin perder nada.
+ */
+async function validateUpgradeWithExistingData(PGlite) {
+  section('17. Actualización de un proyecto con datos (migraciones 20261118*)');
+  const db = new PGlite();
+  await db.exec(SUPABASE_STUB);
+  const all = migrationFiles();
+  const previous = all.filter((m) => !m.name.startsWith(NEW_MIGRATIONS_PREFIX));
+  const added = all.filter((m) => m.name.startsWith(NEW_MIGRATIONS_PREFIX));
+  check(added.length === 3, 'Hay 3 migraciones nuevas', added.map((m) => m.name).join(', '));
+  for (const { sql } of previous) await db.exec(sql);
+
+  const OLD = '2026-05-01T10:00:00.000Z';
+  const ids = {
+    user: '80000000-0000-4000-8000-000000000001',
+    visit: '80000000-0000-4000-8000-000000000002',
+    visit2: '80000000-0000-4000-8000-000000000003',
+    visit3: '80000000-0000-4000-8000-000000000004',
+    template: '80000000-0000-4000-8000-000000000005',
+    material: '80000000-0000-4000-8000-000000000006',
+    frDb: '80000000-0000-4000-8000-000000000007',
+    frAsset: '80000000-0000-4000-8000-000000000008',
+    frOrphan: '80000000-0000-4000-8000-000000000009',
+    vm: '80000000-0000-4000-8000-000000000010',
+    photo: '80000000-0000-4000-8000-000000000011',
+  };
+  await db.exec(`
+    INSERT INTO auth.users (id, email) VALUES ('${ids.user}', 'existente@teins.com');
+    INSERT INTO public.form_templates (id, name, visit_type, version, sections_json)
+      VALUES ('${ids.template}', 'Plantilla existente', 'general', 1, '[]');
+    INSERT INTO public.material_catalog (id, code, name, unit)
+      VALUES ('${ids.material}', 'MAT-EX', 'Material existente', 'metro');
+    INSERT INTO public.visits (id, technician_id, title, visit_type, created_at, updated_at) VALUES
+      ('${ids.visit}', '${ids.user}', 'Visita 1', 'general', '${OLD}', '${OLD}'),
+      ('${ids.visit2}', '${ids.user}', 'Visita 2', 'ups', '${OLD}', '${OLD}'),
+      ('${ids.visit3}', '${ids.user}', 'Visita 3', 'general', '${OLD}', '${OLD}');
+    INSERT INTO public.form_responses (id, visit_id, template_id, template_version, responses,
+        is_complete, created_at, updated_at) VALUES
+      ('${ids.frDb}', '${ids.visit}', '${ids.template}', 1, '{"f1": "valor"}', TRUE, '${OLD}', '${OLD}'),
+      ('${ids.frAsset}', '${ids.visit2}', NULL, 1,
+        '{"equipo": "UPS", "__template_key": "ups_cdp_v1"}', FALSE, '${OLD}', '${OLD}'),
+      ('${ids.frOrphan}', '${ids.visit3}', NULL, 1, '{"x": 1}', FALSE, '${OLD}', '${OLD}');
+    INSERT INTO public.visit_materials (id, visit_id, material_id, material_code, material_name,
+        unit, quantity, created_at, updated_at)
+      VALUES ('${ids.vm}', '${ids.visit}', '${ids.material}', 'MAT-EX', 'Material existente',
+        'metro', 12.5, '${OLD}', '${OLD}');
+    INSERT INTO public.photos (id, visit_id, local_path, captured_at, width, height)
+      VALUES ('${ids.photo}', '${ids.visit}', 'teins_photos/vieja.jpg', '${OLD}', 800, 600);
+  `);
+  const snapshot = async () => ({
+    fr: (
+      await db.query(
+        `SELECT id, visit_id, template_id, responses, is_complete, created_at, updated_at
+         FROM public.form_responses ORDER BY id`,
+      )
+    ).rows,
+    vm: (
+      await db.query(
+        `SELECT id, visit_id, material_id, material_code, material_name, unit, quantity::text,
+                created_at, updated_at FROM public.visit_materials ORDER BY id`,
+      )
+    ).rows,
+    ph: (
+      await db.query(
+        `SELECT id, visit_id, local_path, captured_at, width, height FROM public.photos ORDER BY id`,
+      )
+    ).rows,
+  });
+  const before = await snapshot();
+
+  for (const round of [1, 2]) {
+    for (const { name, sql } of added) {
+      try {
+        await db.exec(sql);
+        check(true, `${round === 1 ? 'Aplica' : 'Re-aplica'} ${name} sobre datos existentes`);
+      } catch (error) {
+        check(false, `${round === 1 ? 'Aplica' : 'Re-aplica'} ${name}`, error.message);
+      }
+    }
+  }
+
+  const after = await snapshot();
+  check(
+    isDeepStrictEqual(after, before),
+    'Respuestas, materiales y fotos existentes se conservan intactos (incluido updated_at)',
+    JSON.stringify({ before, after }),
+  );
+  const keys = Object.fromEntries(
+    (await db.query('SELECT id, template_key FROM public.form_responses')).rows.map((row) => [
+      row.id,
+      row.template_key,
+    ]),
+  );
+  check(keys[ids.frDb] === ids.template, 'template_key = template_id para plantillas de la base');
+  check(
+    keys[ids.frAsset] === 'ups_cdp_v1',
+    'template_key = __template_key para plantillas del asset',
+  );
+  check(keys[ids.frOrphan] === null, 'Sin plantilla conocida, template_key queda en NULL');
+  const vmRow = (await db.query('SELECT is_custom FROM public.visit_materials')).rows[0];
+  check(vmRow?.is_custom === false, 'Los materiales existentes quedan como del catálogo');
+  const photoRow = (
+    await db.query('SELECT latitude, longitude, location_accuracy, taken_at FROM public.photos')
+  ).rows[0];
+  check(
+    photoRow &&
+      photoRow.latitude === null &&
+      photoRow.longitude === null &&
+      photoRow.location_accuracy === null &&
+      photoRow.taken_at === null,
+    'Las fotos existentes quedan sin marca (columnas nuevas en NULL)',
+  );
+  const constraints = (
+    await db.query(
+      `SELECT conname FROM pg_constraint
+       WHERE conrelid = 'public.form_responses'::regclass AND contype = 'u'`,
+    )
+  ).rows.map((row) => row.conname);
+  check(
+    !constraints.includes('uq_form_response_visit') &&
+      constraints.includes('uq_form_response_visit_template'),
+    'Se quita UNIQUE (visit_id) y queda UNIQUE (visit_id, template_key)',
+    JSON.stringify(constraints),
+  );
+  const nullable = (
+    await db.query(
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'visit_materials' AND column_name = 'material_id'`,
+    )
+  ).rows[0]?.is_nullable;
+  check(nullable === 'YES', 'visit_materials.material_id admite NULL');
+  let failed = null;
+  try {
+    await db.query(
+      `INSERT INTO public.form_responses (id, visit_id, template_id, responses)
+       VALUES ('80000000-0000-4000-8000-000000000099', '${ids.visit}', '${ids.template}', '{}')`,
+    );
+  } catch (error) {
+    failed = error;
+  }
+  check(
+    failed !== null && /uq_form_response_visit_template/.test(failed.message),
+    'Tras migrar, una respuesta repetida de la misma plantilla sigue rechazándose',
+    failed ? failed.message : 'sin error',
+  );
+  await db.query(
+    `INSERT INTO public.form_responses (id, visit_id, template_id, template_key, responses)
+     VALUES ('80000000-0000-4000-8000-000000000098', '${ids.visit}', NULL, 'ups_cdp_v1',
+       '{"__template_key": "ups_cdp_v1"}')`,
+  );
+  check(
+    (await db.query(`SELECT 1 FROM public.form_responses WHERE visit_id = '${ids.visit}'`)).rows
+      .length === 2,
+    'Tras migrar, la visita con su respuesta antigua admite un segundo formulario',
+  );
+  await db.close();
 }
 
 main().catch((error) => {

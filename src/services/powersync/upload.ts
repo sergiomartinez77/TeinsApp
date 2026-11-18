@@ -26,6 +26,7 @@ const JSON_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 /** Columnas BOOLEAN en PostgreSQL que localmente son enteros 1/0. */
 const BOOLEAN_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   form_responses: ['is_complete'],
+  visit_materials: ['is_custom'],
 };
 
 /** Tablas cuya columna `sync_status` usa el enum general de sincronización. */

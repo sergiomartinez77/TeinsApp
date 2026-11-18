@@ -81,6 +81,11 @@ export interface FormResponse {
   readonly templateId: string | null;
   /** Id de la plantilla de respaldo (clave reservada del JSON), si la hay. */
   readonly templateKey: string | null;
+  /**
+   * Plantilla de la fila (una respuesta por visita y plantilla): la columna
+   * `template_key` o, en filas antiguas sin ella, `templateId` o `templateKey`.
+   */
+  readonly templateRef: string | null;
   readonly templateVersion: number;
   readonly values: FormValues;
   readonly syncStatus: RecordSyncStatus;
@@ -284,11 +289,13 @@ export function parseResponsesJson(raw: unknown): {
 /** Convierte una fila de `form_responses` en una respuesta. */
 export function responseFromRow(row: UnknownRecord): FormResponse {
   const { values, templateKey } = parseResponsesJson(row.responses);
+  const templateId = text(row.template_id);
   return {
     id: String(row.id),
     visitId: text(row.visit_id) ?? '',
-    templateId: text(row.template_id),
+    templateId,
     templateKey,
+    templateRef: text(row.template_key) ?? templateId ?? templateKey,
     templateVersion: integer(row.template_version, 1),
     values,
     syncStatus: parseRecordSyncStatus(row.sync_status),

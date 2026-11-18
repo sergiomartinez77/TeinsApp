@@ -18,6 +18,10 @@
 #   (responses, elements, sections_json; no hace falta ::text); BOOLEAN llega
 #   como 1/0 (la app filtra is_active = 1); enums, UUID y fechas como texto;
 #   NUMERIC como texto (por eso quantity se convierte a real).
+# • visit_materials enumera sus columnas (por el CAST de quantity): una columna
+#   nueva del servidor hay que añadirla aquí (p. ej. is_custom, migración
+#   20261118000200). form_responses y photos usan SELECT *: sus columnas nuevas
+#   (template_key, latitude, longitude, location_accuracy, taken_at) llegan solas.
 # ═══════════════════════════════════════════════════════════════════════════
 
 config:
@@ -42,7 +46,7 @@ streams:
     queries:
       - SELECT * FROM form_responses WHERE visit_id IN visitas_del_tecnico
       - |
-        SELECT id, visit_id, material_id, material_code, material_name, unit,
+        SELECT id, visit_id, material_id, is_custom, material_code, material_name, unit,
                CAST(quantity AS real) AS quantity, observations, sync_status,
                created_at, updated_at
         FROM visit_materials WHERE visit_id IN visitas_del_tecnico

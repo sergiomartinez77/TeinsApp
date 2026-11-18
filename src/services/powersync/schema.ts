@@ -78,6 +78,11 @@ const form_responses = new Table(
   {
     visit_id: column.text,
     template_id: column.text,
+    /**
+     * Plantilla de la respuesta: UUID de la base o id de la plantilla de
+     * respaldo (asset). Una respuesta por visita y plantilla.
+     */
+    template_key: column.text,
     template_version: column.integer,
     /** JSON: { "id_del_campo": valor } */
     responses: column.text,
@@ -87,7 +92,7 @@ const form_responses = new Table(
     updated_at: column.text,
     completed_at: column.text,
   },
-  { indexes: { fr_visit: ['visit_id'] } },
+  { indexes: { fr_visit: ['visit_id'], fr_visit_template: ['visit_id', 'template_key'] } },
 );
 
 const material_catalog = new Table(
@@ -105,7 +110,10 @@ const material_catalog = new Table(
 const visit_materials = new Table(
   {
     visit_id: column.text,
+    /** NULL en los materiales personalizados. */
     material_id: column.text,
+    /** 1 = material escrito por el técnico solo para esta visita (no está en el catálogo). */
+    is_custom: column.integer,
     material_code: column.text,
     material_name: column.text,
     unit: column.text,
@@ -132,6 +140,13 @@ const photos = new Table(
     file_size_bytes: column.integer,
     width: column.integer,
     height: column.integer,
+    /** Ubicación impresa en la foto (grados decimales); NULL = no disponible. */
+    latitude: column.real,
+    longitude: column.real,
+    /** Precisión de la ubicación, en metros. */
+    location_accuracy: column.real,
+    /** Fecha y hora impresa en la foto (ISO 8601 UTC). */
+    taken_at: column.text,
   },
   { indexes: { ph_visit: ['visit_id'], ph_sync: ['sync_status'] } },
 );

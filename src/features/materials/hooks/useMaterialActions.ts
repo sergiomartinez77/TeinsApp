@@ -8,16 +8,20 @@ import type { AppError } from '@/types/errors';
 import { unwrapResult as unwrap, userErrorMessage } from '@/utils/result.utils';
 
 import {
+  addCustomMaterialToVisit,
   addMaterialToVisit,
   removeVisitMaterial,
   updateVisitMaterial,
 } from '../services/material.service';
-import type { MaterialEntryInput } from '../validation';
+import type { CustomMaterialInput, MaterialEntryInput } from '../validation';
 
 /** Material del catálogo elegido, con su cantidad y observaciones. */
 export interface NewMaterialEntry extends MaterialEntryInput {
   materialId: string;
 }
+
+/** Material que no está en el catálogo, solo para esta visita. */
+export type NewCustomMaterialEntry = CustomMaterialInput;
 
 /** Cambios de un material ya agregado. */
 export interface MaterialChanges extends MaterialEntryInput {
@@ -36,6 +40,10 @@ export function useMaterialActions(visitId: string) {
     mutationFn: (entry) => unwrap(addMaterialToVisit(db, user.id, { ...entry, visitId })),
   });
 
+  const addCustom = useMutation<VisitMaterial, AppError, NewCustomMaterialEntry>({
+    mutationFn: (entry) => unwrap(addCustomMaterialToVisit(db, user.id, { ...entry, visitId })),
+  });
+
   const update = useMutation<VisitMaterial, AppError, MaterialChanges>({
     mutationFn: (changes) => unwrap(updateVisitMaterial(db, user.id, { ...changes, visitId })),
   });
@@ -46,7 +54,7 @@ export function useMaterialActions(visitId: string) {
     onError: (error) => Alert.alert('No se pudo quitar el material', userErrorMessage(error)),
   });
 
-  const isBusy = add.isPending || update.isPending || remove.isPending;
+  const isBusy = add.isPending || addCustom.isPending || update.isPending || remove.isPending;
 
-  return { add, update, remove, isBusy };
+  return { add, addCustom, update, remove, isBusy };
 }

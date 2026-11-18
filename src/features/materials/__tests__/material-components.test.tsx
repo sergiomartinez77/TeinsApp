@@ -48,6 +48,7 @@ jest.mock('@powersync/react', () => ({
 const visitMaterial = (overrides: Partial<VisitMaterial> = {}): VisitMaterial => ({
   id: 'vm1',
   visitId: 'v1',
+  isCustom: false,
   materialId: 'm1',
   materialCode: 'CAB-001',
   materialName: 'Cable UTP Cat6',

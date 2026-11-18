@@ -147,10 +147,56 @@ describe('photo.service contra SQLite real (sistema de archivos falso)', () => {
         file_size_bytes: 2048,
         width: 1600,
         height: 900,
+        // Sin marca impresa: las columnas de ubicación y hora quedan en NULL.
+        latitude: null,
+        longitude: null,
+        location_accuracy: null,
+        taken_at: null,
       },
     ]);
     expect(stored.has('teins_photos/foto-1.jpg')).toBe(true);
     expect(await db.get(VISIT_PHOTO_STATS_SQL, ['v1', TECH_A])).toEqual({ total: 1, pending: 1 });
+  });
+
+  it('guarda la ubicación, la precisión y la hora impresas en la foto', async () => {
+    const { files } = createFakeFiles();
+    const stamp = {
+      takenAt: '2026-06-10T11:59:58.000Z',
+      location: { latitude: -3.993421, longitude: -79.204512, accuracy: 8 },
+    };
+
+    const result = await addPhoto(db, files, TECH_A, { visitId: 'v1', image: IMAGE, stamp }, NOW);
+
+    expect(result.ok && result.data).toMatchObject({
+      latitude: -3.993421,
+      longitude: -79.204512,
+      locationAccuracy: 8,
+      takenAt: stamp.takenAt,
+    });
+    expect(await db.get(VISIT_PHOTOS_SQL, ['v1', 1])).toMatchObject({
+      latitude: -3.993421,
+      longitude: -79.204512,
+      location_accuracy: 8,
+      taken_at: stamp.takenAt,
+      captured_at: NOW.toISOString(),
+    });
+  });
+
+  it('una foto con marca pero sin ubicación guarda la hora y deja las coordenadas en NULL', async () => {
+    const { files } = createFakeFiles();
+    await addPhoto(
+      db,
+      files,
+      TECH_A,
+      { visitId: 'v1', image: IMAGE, stamp: { takenAt: NOW.toISOString(), location: null } },
+      NOW,
+    );
+    expect(await db.get(VISIT_PHOTOS_SQL, ['v1', 1])).toMatchObject({
+      latitude: null,
+      longitude: null,
+      location_accuracy: null,
+      taken_at: NOW.toISOString(),
+    });
   });
 
   it('no registra fotos en visitas cerradas ni ajenas', async () => {

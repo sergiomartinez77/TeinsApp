@@ -2,7 +2,7 @@ import { summarizeMaterials, type VisitMaterial } from '@/models/material.model'
 
 import {
   annotationsStatusText,
-  formStatusText,
+  formsStatusText,
   materialsStatusText,
   photosStatusText,
   sectionStatusText,
@@ -17,6 +17,7 @@ const material = (
   id,
   visitId: 'v1',
   materialId: id,
+  isCustom: false,
   materialCode: 'COD',
   materialName: 'Material',
   unit,
@@ -27,31 +28,41 @@ const material = (
   updatedAt: '2026-06-01T10:00:00.000Z',
 });
 
-describe('formStatusText', () => {
-  it('sin respuesta indica "Sin iniciar"', () => {
-    expect(formStatusText(null, 'Revisión eléctrica')).toBe('Sin iniciar');
+// Cambiado: antes había un formulario por visita ("En curso · <plantilla>"); ahora
+// hay varios y el resumen muestra cuántos hay y cuántos están completados.
+describe('formsStatusText (varios formularios por visita)', () => {
+  it('sin formularios indica "Sin iniciar"', () => {
+    expect(formsStatusText([])).toBe('Sin iniciar');
   });
 
-  it('en curso muestra el nombre de la plantilla', () => {
-    expect(formStatusText({ isComplete: false }, 'Revisión eléctrica')).toBe(
-      'En curso · Revisión eléctrica',
-    );
+  it('un formulario en curso', () => {
+    expect(formsStatusText([{ isComplete: false }])).toBe('1 formulario · 0 completados');
   });
 
-  it('completado muestra el nombre de la plantilla', () => {
-    expect(formStatusText({ isComplete: true }, 'Revisión eléctrica')).toBe(
-      'Completado · Revisión eléctrica',
-    );
+  it('un formulario completado (singular)', () => {
+    expect(formsStatusText([{ isComplete: true }])).toBe('1 formulario · 1 completado');
   });
 
-  it('sin plantilla conocida muestra solo el estado', () => {
-    expect(formStatusText({ isComplete: false }, null)).toBe('En curso');
-    expect(formStatusText({ isComplete: true }, null)).toBe('Completado');
-    expect(formStatusText({ isComplete: true }, '   ')).toBe('Completado');
+  it('varios formularios, algunos completados', () => {
+    expect(
+      formsStatusText([{ isComplete: true }, { isComplete: false }, { isComplete: true }]),
+    ).toBe('3 formularios · 2 completados');
   });
 });
 
 describe('materialsStatusText', () => {
+  it('con personalizados los cuenta antes de los totales', () => {
+    expect(
+      materialsStatusText({
+        count: 2,
+        countLabel: '2 materiales',
+        totals: [],
+        totalsLabel: '3 metro',
+        customLabel: '1 personalizado',
+      }),
+    ).toBe('2 materiales · 1 personalizado · 3 metro');
+  });
+
   it('sin materiales', () => {
     expect(materialsStatusText(summarizeMaterials([]))).toBe('Sin materiales');
   });

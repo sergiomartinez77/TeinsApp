@@ -6,6 +6,7 @@ import { generateId } from '@/utils/uuid.utils';
 
 import type { CompressedImage } from './photo-capture';
 import { photoRelativePath, type PhotoFileSystem } from './photo-files';
+import type { PhotoStampData } from './photo-stamp';
 import { photoTrashName } from './photo-trash';
 import {
   DELETE_PHOTO_SQL,
@@ -36,6 +37,8 @@ export interface AddPhotoInput {
   visitId: string;
   /** JPEG ya comprimido en un archivo temporal. */
   image: Pick<CompressedImage, 'uri' | 'width' | 'height'>;
+  /** Fecha y ubicación impresas en la foto; sin marca, las columnas quedan en NULL. */
+  stamp?: PhotoStampData | null;
 }
 
 export interface DeletePhotoInput {
@@ -77,7 +80,8 @@ function failure(error: unknown, message: string): Result<never> {
 
 /**
  * Guarda una fotografía nueva: mueve el JPEG a `teins_photos/<id>.jpg` y
- * registra la fila con `sync_status = 'local'`. La foto aparece al instante en
+ * registra la fila con `sync_status = 'local'` y los datos de la marca
+ * impresa (ubicación, precisión y hora) si los hay. La foto aparece al instante en
  * la galería (consulta reactiva); el gestor de subidas la enviará después.
  *
  * Si falla el registro después de escribir el archivo, ese archivo se borra
@@ -115,6 +119,10 @@ export async function addPhoto(
         file_size_bytes: size,
         width: input.image.width,
         height: input.image.height,
+        latitude: input.stamp?.location?.latitude ?? null,
+        longitude: input.stamp?.location?.longitude ?? null,
+        location_accuracy: input.stamp?.location?.accuracy ?? null,
+        taken_at: input.stamp?.takenAt ?? null,
       };
       await tx.execute(INSERT_PHOTO_SQL, [
         row.id,
@@ -130,6 +138,10 @@ export async function addPhoto(
         row.file_size_bytes,
         row.width,
         row.height,
+        row.latitude,
+        row.longitude,
+        row.location_accuracy,
+        row.taken_at,
       ]);
       return photoFromRow(row);
     });

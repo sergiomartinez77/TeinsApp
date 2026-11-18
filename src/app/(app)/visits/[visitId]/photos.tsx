@@ -23,6 +23,7 @@ import { PhotoThumbnail } from '@/features/photos/components/PhotoThumbnail';
 import { PhotoViewer } from '@/features/photos/components/PhotoViewer';
 import { usePhotoActions } from '@/features/photos/hooks/usePhotoActions';
 import { useVisitPhotos } from '@/features/photos/hooks/useVisitPhotos';
+import { renderPhotoStamp } from '@/features/photos/services/photo-stamp-renderer';
 import { useVisit } from '@/features/visits/hooks/useVisits';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
@@ -54,7 +55,11 @@ export default function VisitPhotosScreen() {
 
   const visitQuery = useVisit(user.id, visitId);
   const list = useVisitPhotos(visitId);
-  const { capture, remove } = usePhotoActions(visitId);
+  // La marca (fecha, ubicación y título de la visita) se dibuja con Skia sobre cada foto.
+  const { capture, remove } = usePhotoActions(visitId, {
+    visitTitle: visitQuery.visit?.title,
+    renderStamp: renderPhotoStamp,
+  });
 
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
 

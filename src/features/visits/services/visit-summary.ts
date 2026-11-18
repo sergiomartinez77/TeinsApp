@@ -6,6 +6,8 @@ import { elementCountLabel } from '@/models/annotation.model';
 import type { MaterialsSummary } from '@/models/material.model';
 import { photoCountLabel } from '@/models/photo.model';
 
+import { formsSummaryText } from '@/features/forms/services/visit-forms';
+
 import type { VisitSection } from '../components/SectionGrid';
 
 /** Secciones que aparecen en el resumen (el resumen no se lista a sí mismo). */
@@ -44,27 +46,25 @@ export function sectionStatusText(state: SectionQueryState, build: () => string)
 }
 
 /**
- * Formulario técnico: "Sin iniciar", "En curso · <plantilla>" o
- * "Completado · <plantilla>". Sin plantilla conocida, solo el estado.
+ * Formularios técnicos (varios por visita): "Sin iniciar" o
+ * "N formularios · M completados".
  */
-export function formStatusText(
-  response: { readonly isComplete: boolean } | null,
-  templateName: string | null,
-): string {
-  if (!response) return SUMMARY_MESSAGES.formNotStarted;
-  const state = response.isComplete
-    ? SUMMARY_MESSAGES.formCompleted
-    : SUMMARY_MESSAGES.formInProgress;
-  const name = templateName?.trim();
-  return name ? `${state}${SEPARATOR}${name}` : state;
+export function formsStatusText(forms: readonly { readonly isComplete: boolean }[]): string {
+  return formsSummaryText(forms);
 }
 
-/** Materiales: "Sin materiales" o "N materiales · 120 metro · 14 unidad". */
-export function materialsStatusText(summary: MaterialsSummary): string {
+/**
+ * Materiales: "Sin materiales" o "N materiales · 120 metro · 14 unidad"; si hay
+ * personalizados, "N materiales · 1 personalizado · 120 metro".
+ */
+export function materialsStatusText(
+  summary: Omit<MaterialsSummary, 'customCount' | 'customLabel'> &
+    Partial<Pick<MaterialsSummary, 'customLabel'>>,
+): string {
   if (summary.count === 0) return SUMMARY_MESSAGES.noMaterials;
-  return summary.totalsLabel
-    ? `${summary.countLabel}${SEPARATOR}${summary.totalsLabel}`
-    : summary.countLabel;
+  return [summary.countLabel, summary.customLabel, summary.totalsLabel]
+    .filter((part): part is string => Boolean(part))
+    .join(SEPARATOR);
 }
 
 /** Fotografías: "Sin fotografías", "N fotografías" y, si hay, " · M por subir". */

@@ -25,8 +25,8 @@ import { AutosaveIndicator } from '@/features/forms/components/AutosaveIndicator
 import { FormSectionView } from '@/features/forms/components/FormSectionView';
 import { SectionChips } from '@/features/forms/components/SectionChips';
 import { useFormEditor } from '@/features/forms/hooks/useFormEditor';
-import { useFormResponse } from '@/features/forms/hooks/useFormResponse';
 import { useFormTemplates } from '@/features/forms/hooks/useFormTemplates';
+import { useFormResponseFor } from '@/features/forms/hooks/useVisitForms';
 import {
   findTemplate,
   resolveTemplateForResponse,
@@ -44,14 +44,23 @@ import { formatDateTime } from '@/utils/date.utils';
 
 const TEMPLATE_NOT_FOUND = 'No se encontró la plantilla de este formulario.';
 
-/** Ruta `/visits/[visitId]/form` — formulario técnico dinámico con autoguardado. */
+/**
+ * Ruta `/visits/[visitId]/form` — un formulario técnico de la visita, con
+ * autoguardado. Parámetros: `templateId` (plantilla del formulario) y, al
+ * abrirlo desde la lista, `responseId` (la respuesta ya empezada). Sin
+ * parámetros abre el primer formulario de la visita (como antes).
+ */
 export default function VisitFormScreen() {
-  const { visitId, templateId } = useLocalSearchParams<{ visitId: string; templateId?: string }>();
+  const { visitId, templateId, responseId } = useLocalSearchParams<{
+    visitId: string;
+    templateId?: string;
+    responseId?: string;
+  }>();
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
   const visitQuery = useVisit(user.id, visitId);
-  const responseQuery = useFormResponse(visitId);
+  const responseQuery = useFormResponseFor(visitId, { templateId, responseId });
   const templatesQuery = useFormTemplates();
 
   const { visit } = visitQuery;
@@ -116,6 +125,7 @@ function FormEditor({ visit, template, response, isOnline }: FormEditorProps) {
     visitId: visit.id,
     technicianId: visit.technicianId,
     template,
+    responseId: response?.id,
     initialValues: response?.values ?? {},
     readOnly,
   });
