@@ -241,6 +241,8 @@ export function buildExpoConfig(
     },
     plugins: [
       'expo-router',
+      // Memoria de Gradle para compilar Android (ver el archivo).
+      './plugins/with-gradle-memory.js',
       [
         'expo-secure-store',
         {
