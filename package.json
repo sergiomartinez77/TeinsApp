@@ -11,21 +11,21 @@
     "@powersync/react-native": "^1.35.11",
     "@react-native-community/datetimepicker": "9.2.1",
     "@react-native-community/netinfo": "12.0.1",
-    "@shopify/react-native-skia": "2.14.0",
+    "@shopify/react-native-skia": "2.13.1",
     "@supabase/supabase-js": "^2.119.0",
     "@tanstack/react-query": "^5.107.1",
-    "expo": "~58.0.25",
+    "expo": "~58.0.26",
     "expo-asset": "~58.0.21",
     "expo-constants": "~58.0.16",
     "expo-crypto": "~58.0.8",
-    "expo-dev-client": "~58.0.20",
-    "expo-file-system": "~58.0.13",
+    "expo-dev-client": "~58.0.21",
+    "expo-file-system": "~58.0.14",
     "expo-font": "~58.0.12",
     "expo-image": "~58.0.18",
     "expo-image-manipulator": "~58.0.16",
     "expo-image-picker": "~58.0.10",
     "expo-linking": "~58.0.17",
-    "expo-router": "~58.0.31",
+    "expo-router": "~58.0.32",
     "expo-secure-store": "~58.0.3",
     "expo-splash-screen": "~58.0.14",
     "expo-status-bar": "~58.0.5",
@@ -50,7 +50,7 @@
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.7",
     "jest": "~30.5.2",
-    "jest-expo": "~58.0.14",
+    "jest-expo": "~58.0.15",
     "prettier": "^3.10.0",
     "react-dom": "19.3.0",
     "react-test-renderer": "19.3.0",
@@ -77,5 +77,12 @@
     "build:prod:android": "npx eas-cli@latest build --profile production --platform android",
     "build:prod:ios": "npx eas-cli@latest build --profile production --platform ios"
   },
-  "private": true
+  "private": true,
+  "expo": {
+    "install": {
+      "exclude": [
+        "@shopify/react-native-skia"
+      ]
+    }
+  }
 }
