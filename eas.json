@@ -14,7 +14,7 @@
       },
       "android": {
         "buildType": "apk",
-        "gradleCommand": ":app:assembleDebug --no-parallel --max-workers=2"
+        "gradleCommand": ":app:assembleDebug --no-parallel --max-workers=1"
       }
     },
     "development-simulator": {
