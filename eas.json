@@ -27,10 +27,12 @@
       "distribution": "internal",
       "environment": "preview",
       "env": {
-        "APP_ENV": "staging"
+        "APP_ENV": "staging",
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
       },
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease --no-parallel --max-workers=1"
       }
     },
     "production": {
