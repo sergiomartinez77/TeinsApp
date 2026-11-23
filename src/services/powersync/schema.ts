@@ -1,7 +1,7 @@
 import { column, Schema, Table } from '@powersync/react-native';
 
 /**
- * Esquema SQLite local gestionado por PowerSync (9 tablas sincronizadas).
+ * Esquema SQLite local gestionado por PowerSync (12 tablas sincronizadas).
  *
  * PowerSync aplica este esquema como vistas sobre sus tablas internas:
  * no hacen falta migraciones manuales en el cliente. La columna `id`
@@ -103,6 +103,8 @@ const material_catalog = new Table(
     unit: column.text,
     category: column.text,
     is_active: column.integer,
+    /** Mínimo en bodega; por debajo se sugiere comprar. NULL = sin mínimo. Solo lo cambia el admin. */
+    min_stock: column.real,
   },
   { indexes: { mc_code: ['code'], mc_name: ['name'], mc_category: ['category'] } },
 );
@@ -160,11 +162,68 @@ const annotations = new Table(
     base_image_path: column.text,
     canvas_width: column.real,
     canvas_height: column.real,
+    /**
+     * Formato de `elements`: 1 = puntos normalizados 0–1 respecto a
+     * canvas_width/canvas_height (antiguo); 2 = coordenadas en centímetros.
+     */
+    format_version: column.integer,
     sync_status: column.text,
     created_at: column.text,
     updated_at: column.text,
   },
   { indexes: { an_visit: ['visit_id'] } },
+);
+
+/** Biblioteca de figuras del técnico, reutilizables en cualquier plano. */
+const annotation_figures = new Table(
+  {
+    technician_id: column.text,
+    name: column.text,
+    /** JSON: lista de elementos de la figura (mismo formato que annotations). */
+    elements: column.text,
+    width: column.real,
+    height: column.real,
+    sync_status: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  },
+  { indexes: { af_technician: ['technician_id'] } },
+);
+
+/**
+ * Existencias de la bodega por material del catálogo (`id` = `material_id`).
+ * Las calcula el servidor con triggers: la app solo la lee y nunca la sube.
+ */
+const material_stock = new Table(
+  {
+    material_id: column.text,
+    /** Σ compras. */
+    purchased: column.real,
+    /** Σ ajustes (pueden ser negativos). */
+    adjusted: column.real,
+    /** Σ cantidades usadas en visitas (solo materiales del catálogo). */
+    used: column.real,
+    /** purchased + adjusted − used. */
+    on_hand: column.real,
+    updated_at: column.text,
+  },
+  { indexes: { ms_material: ['material_id'] } },
+);
+
+/** Compras y ajustes de la bodega. Solo admin u oficina pueden registrarlos. */
+const material_stock_movements = new Table(
+  {
+    material_id: column.text,
+    /** 'purchase' (compra, > 0) o 'adjustment' (ajuste, ≠ 0). */
+    kind: column.text,
+    quantity: column.real,
+    note: column.text,
+    created_by: column.text,
+    sync_status: column.text,
+    created_at: column.text,
+    updated_at: column.text,
+  },
+  { indexes: { smv_material: ['material_id'], smv_created: ['-created_at'] } },
 );
 
 /**
@@ -196,6 +255,9 @@ export const appSchema = new Schema({
   visit_materials,
   photos,
   annotations,
+  annotation_figures,
+  material_stock,
+  material_stock_movements,
   sync_issues,
 });
 
@@ -209,4 +271,7 @@ export type MaterialCatalogRow = Database['material_catalog'];
 export type VisitMaterialRow = Database['visit_materials'];
 export type PhotoRow = Database['photos'];
 export type AnnotationRow = Database['annotations'];
+export type AnnotationFigureRow = Database['annotation_figures'];
+export type MaterialStockRow = Database['material_stock'];
+export type MaterialStockMovementRow = Database['material_stock_movements'];
 export type SyncIssueRow = Database['sync_issues'];

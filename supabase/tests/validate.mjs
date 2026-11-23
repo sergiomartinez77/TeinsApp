@@ -21,6 +21,13 @@
  *      ya tiene datos (se aplican primero las migraciones antiguas, se cargan
  *      filas y después las nuevas dos veces: los datos se conservan y se
  *      transforman).
+ *   5. Planos y figuras (migración 20261122000100): varios planos por visita,
+ *      format_version, borrado de planos y la biblioteca de figuras de cada
+ *      técnico (annotation_figures) con su RLS.
+ *   6. Inventario (migración 20261122000200): RLS de material_stock y
+ *      material_stock_movements, cuentas de los triggers (compras, ajustes y
+ *      uso en visitas; los personalizados no cuentan), min_stock y el relleno
+ *      de existencias desde los datos que ya había.
  *
  * No se conecta a ningún servicio externo. PGlite se usa desde
  * node_modules si está instalado; si no, se instala UNA vez en una carpeta
@@ -483,14 +490,22 @@ async function main() {
   check(denied(r), 'Técnico 2 NO inserta fotos en una visita ajena', errMsg(r));
   r = await as(db, T2, (tx) => tx.query(`DELETE FROM public.photos WHERE id = $1`, [photo.id]));
   check(ok(r) && r.value.affectedRows === 0, 'Técnico 2 NO borra fotos ajenas');
+  r = await as(db, T2, (tx) => tx.query(`DELETE FROM public.annotations WHERE id = $1`, [ann.id]));
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico 2 NO borra planos de otro técnico');
 
   section('7. Borrados permitidos y no permitidos');
   r = await as(db, T1, (tx) =>
     tx.query(`DELETE FROM public.form_responses WHERE id = $1`, [fr.id]),
   );
   check(ok(r) && r.value.affectedRows === 0, 'Técnico NO borra form_responses (la app no lo hace)');
-  r = await as(db, T1, (tx) => tx.query(`DELETE FROM public.annotations WHERE id = $1`, [ann.id]));
-  check(ok(r) && r.value.affectedRows === 0, 'Técnico NO borra annotations (la app no lo hace)');
+  r = await as(db, T1, (tx) => tx.query(`DELETE FROM public.annotations WHERE id = $1`, [ann.id]), {
+    commit: false,
+  });
+  check(
+    ok(r) && r.value.affectedRows === 1,
+    'Técnico borra un plano de su visita (deshecho)',
+    errMsg(r),
+  );
   r = await as(db, T1, (tx) =>
     tx.query(`DELETE FROM public.visit_materials WHERE id = $1`, [vm.id]),
   );
@@ -582,6 +597,9 @@ async function main() {
     'visit_materials',
     'photos',
     'annotations',
+    'annotation_figures',
+    'material_stock',
+    'material_stock_movements',
     'audit_logs',
   ]) {
     r = await as(db, ANON, (tx) => count(tx, `SELECT 1 FROM public.${table}`));
@@ -641,8 +659,10 @@ async function main() {
   check(ok(r) && r.value.affectedRows === 0, 'Técnico NO borra objetos remotos');
 
   await validateImprovementsRls(db, { T1, T2, OFF, V1, T2_VISIT, now });
+  await validatePlansAndFigures(db, { T1, T2, OFF, ANON, V1, now });
+  await validateInventory(db, { T1, T2, OFF, ADM, ANON, V1, now });
 
-  section('16. Estructura, funciones y PowerSync');
+  section('17. Estructura, funciones y PowerSync');
   const meta = await as(db, {}, async (tx) => ({
     noRls: (
       await tx.query(
@@ -708,10 +728,13 @@ async function main() {
     ).rows.map((x) => x.table_name),
   }));
   const expected = [
+    'annotation_figures',
     'annotations',
     'form_responses',
     'form_templates',
     'material_catalog',
+    'material_stock',
+    'material_stock_movements',
     'photos',
     'profiles',
     'visit_materials',
@@ -721,7 +744,7 @@ async function main() {
   if (ok(ps)) {
     check(
       JSON.stringify([...ps.value.pub].sort()) === JSON.stringify(expected),
-      'Publicación powersync con exactamente las 9 tablas',
+      'Publicación powersync con exactamente las 12 tablas',
       JSON.stringify(ps.value.pub),
     );
     const role = ps.value.role;
@@ -731,7 +754,7 @@ async function main() {
     );
     check(
       JSON.stringify([...ps.value.selects].sort()) === JSON.stringify(expected),
-      'powersync_role solo tiene SELECT en las 9 tablas (no audit_logs)',
+      'powersync_role solo tiene SELECT en las 12 tablas (no audit_logs)',
       JSON.stringify(ps.value.selects),
     );
   } else {
@@ -756,7 +779,8 @@ async function main() {
 
 // ── Mejoras de noviembre de 2026 (migraciones 20261118*) ───────────────────
 
-const NEW_MIGRATIONS_PREFIX = '20261118';
+const NEW_MIGRATIONS_PREFIXES = ['20261118', '20261122'];
+const isNewMigration = (name) => NEW_MIGRATIONS_PREFIXES.some((prefix) => name.startsWith(prefix));
 const violates = (result, name) =>
   result.error !== null && new RegExp(name, 'i').test(result.error.message);
 
@@ -1067,6 +1091,573 @@ async function validateImprovementsRls(db, { T1, T2, OFF, V1, T2_VISIT, now }) {
   check(ok(r) && r.value.affectedRows === 0, 'Técnico sigue sin poder borrar formularios');
 }
 
+// ── Planos y figuras (migración 20261122000100) ────────────────────────────
+
+/**
+ * Varios planos por visita, format_version, borrado de planos y la biblioteca
+ * de figuras de cada técnico (annotation_figures), sobre la base ya migrada.
+ */
+async function validatePlansAndFigures(db, { T1, T2, OFF, ANON, V1, now }) {
+  section('16. Varios planos por visita y biblioteca de figuras');
+  const plan = {
+    id: '90000000-0000-4000-8000-000000000001',
+    visit_id: V1,
+    title: 'Planta baja',
+    elements: JSON.stringify([]),
+    base_image_path: null,
+    canvas_width: 300,
+    canvas_height: 200,
+    sync_status: 'synced',
+    created_at: now,
+    updated_at: now,
+  };
+  const secondPlan = '90000000-0000-4000-8000-000000000002';
+  const v2Plan = '90000000-0000-4000-8000-000000000003';
+  let r = await as(db, T1, async (tx) => {
+    await upsert(tx, 'annotations', plan);
+    await upsert(tx, 'annotations', { ...plan, id: secondPlan, title: 'Planta alta' });
+    return count(tx, 'SELECT 1 FROM public.annotations WHERE id = ANY($1)', [
+      [plan.id, secondPlan],
+    ]);
+  });
+  check(ok(r) && r.value === 2, 'Dos planos en la misma visita ya se permiten', errMsg(r));
+  r = await as(
+    db,
+    T1,
+    async (tx) =>
+      (await tx.query('SELECT format_version FROM public.annotations WHERE id = $1', [plan.id]))
+        .rows[0],
+  );
+  check(r.value?.format_version === 1, 'format_version por defecto = 1', JSON.stringify(r.value));
+  r = await as(db, T1, (tx) =>
+    upsert(tx, 'annotations', { ...plan, id: v2Plan, format_version: 2 }),
+  );
+  check(ok(r), 'Se guarda un plano con format_version 2', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.annotations SET format_version = 3 WHERE id = $1', [plan.id]),
+  );
+  check(
+    violates(r, 'ck_annotation_format_version'),
+    'format_version = 3 se rechaza (CHECK)',
+    errMsg(r),
+  );
+  r = await as(db, T2, (tx) =>
+    upsert(tx, 'annotations', { ...plan, id: '90000000-0000-4000-8000-000000000004' }),
+  );
+  check(denied(r), 'Técnico 2 NO crea planos en una visita ajena', errMsg(r));
+  r = await as(db, T2, (tx) => tx.query('DELETE FROM public.annotations WHERE id = $1', [v2Plan]));
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico 2 NO borra planos ajenos (0 filas)');
+  r = await as(db, T1, (tx) => tx.query('DELETE FROM public.annotations WHERE id = $1', [v2Plan]));
+  check(ok(r) && r.value.affectedRows === 1, 'Técnico borra un plano de su visita', errMsg(r));
+
+  const figure = {
+    id: '90000000-0000-4000-8000-000000000010',
+    technician_id: T1.uid,
+    name: 'Rack 42U',
+    elements: JSON.stringify([{ type: 'rect', x: 0, y: 0, w: 60, h: 200 }]),
+    width: 60,
+    height: 200,
+    sync_status: 'synced',
+    created_at: now,
+    updated_at: now,
+  };
+  r = await as(db, T1, (tx) => upsert(tx, 'annotation_figures', figure));
+  check(ok(r), 'Técnico 1 crea una figura (upsert)', errMsg(r));
+  r = await as(db, T1, (tx) => upsert(tx, 'annotation_figures', { ...figure, width: 61 }));
+  check(ok(r), 'Técnico 1 repite el upsert de su figura (UPDATE vía ON CONFLICT)', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query(`UPDATE public.annotation_figures SET name = 'Rack 42U (frente)' WHERE id = $1`, [
+      figure.id,
+    ]),
+  );
+  check(ok(r) && r.value.affectedRows === 1, 'Técnico 1 modifica su figura (PATCH)', errMsg(r));
+  r = await as(
+    db,
+    T1,
+    async (tx) =>
+      (await tx.query('SELECT name, elements, width FROM public.annotation_figures')).rows,
+  );
+  check(
+    ok(r) &&
+      r.value.length === 1 &&
+      r.value[0].name === 'Rack 42U (frente)' &&
+      r.value[0].width === 61 &&
+      Array.isArray(r.value[0].elements),
+    'Técnico 1 lee su figura',
+    `${JSON.stringify(r.value)} ${errMsg(r)}`,
+  );
+  r = await as(db, T2, (tx) => count(tx, 'SELECT 1 FROM public.annotation_figures'));
+  check(ok(r) && r.value === 0, 'Técnico 2 NO ve las figuras del técnico 1', errMsg(r));
+  r = await as(db, OFF, (tx) => count(tx, 'SELECT 1 FROM public.annotation_figures'));
+  check(ok(r) && r.value === 0, 'Oficina NO ve las figuras de los técnicos', errMsg(r));
+  r = await as(db, T2, (tx) =>
+    tx.query(`UPDATE public.annotation_figures SET name = 'x' WHERE id = $1`, [figure.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico 2 NO modifica figuras ajenas (0 filas)');
+  r = await as(db, T2, (tx) =>
+    tx.query('DELETE FROM public.annotation_figures WHERE id = $1', [figure.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico 2 NO borra figuras ajenas (0 filas)');
+  r = await as(db, T2, (tx) =>
+    upsert(tx, 'annotation_figures', { ...figure, id: '90000000-0000-4000-8000-000000000011' }),
+  );
+  check(denied(r), 'Técnico 2 NO crea figuras a nombre de otro', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.annotation_figures SET technician_id = $1 WHERE id = $2', [
+      T2.uid,
+      figure.id,
+    ]),
+  );
+  check(denied(r), 'Técnico 1 NO pasa su figura a otro técnico', errMsg(r));
+  r = await as(db, T2, (tx) =>
+    upsert(tx, 'annotation_figures', {
+      ...figure,
+      id: '90000000-0000-4000-8000-000000000012',
+      technician_id: T2.uid,
+    }),
+  );
+  check(ok(r), 'Técnico 2 crea su propia figura (mismo nombre, no choca)', errMsg(r));
+  for (const [label, name] of [
+    ['vacío', ''],
+    ['solo espacios', '   '],
+    ['de 61 caracteres', 'x'.repeat(61)],
+  ]) {
+    r = await as(db, T1, (tx) =>
+      upsert(tx, 'annotation_figures', {
+        ...figure,
+        id: '90000000-0000-4000-8000-000000000013',
+        name,
+      }),
+    );
+    check(
+      violates(r, 'ck_annotation_figure_name'),
+      `Nombre de figura ${label} rechazado`,
+      errMsg(r),
+    );
+  }
+  r = await as(db, ANON, (tx) => count(tx, 'SELECT 1 FROM public.annotation_figures'));
+  check(denied(r), 'Anónimo no tiene acceso a annotation_figures', errMsg(r));
+  r = await as(db, ANON, (tx) =>
+    upsert(tx, 'annotation_figures', { ...figure, id: '90000000-0000-4000-8000-000000000014' }),
+  );
+  check(denied(r), 'Anónimo NO crea figuras', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query('DELETE FROM public.annotation_figures WHERE id = $1', [figure.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 1, 'Técnico 1 borra su figura', errMsg(r));
+}
+
+/**
+ * Inventario (migración 20261122000200): RLS, cuentas de los triggers y min_stock.
+ * Las cuentas se comprueban como diferencias respecto al estado anterior, para
+ * no depender de lo que dejaron las secciones previas.
+ */
+async function validateInventory(db, { T1, T2, OFF, ADM, ANON, V1, now }) {
+  section('19. Inventario de bodega (material_stock y material_stock_movements)');
+  const M = '40000000-0000-4000-8000-000000000002';
+  const M2 = '40000000-0000-4000-8000-000000000003';
+  const stockOf = async (materialId) =>
+    (
+      await as(
+        db,
+        {},
+        async (tx) =>
+          (
+            await tx.query(
+              `SELECT purchased::float8 AS purchased, adjusted::float8 AS adjusted,
+                      used::float8 AS used, on_hand::float8 AS on_hand
+               FROM public.material_stock WHERE material_id = $1`,
+              [materialId],
+            )
+          ).rows[0] ?? null,
+      )
+    ).value;
+  // Diferencias redondeadas a 3 decimales (NUMERIC(…, 3) leído como float8).
+  const round = (value) => Math.round(value * 1000) / 1000;
+  const delta = (after, before) => ({
+    purchased: round(after.purchased - before.purchased),
+    adjusted: round(after.adjusted - before.adjusted),
+    used: round(after.used - before.used),
+    on_hand: round(after.on_hand - before.on_hand),
+  });
+  const same = (actual, expected) => isDeepStrictEqual(actual, expected);
+  const totalUsed = async () =>
+    (
+      await as(
+        db,
+        {},
+        async (tx) =>
+          (await tx.query('SELECT sum(used)::float8 AS u FROM public.material_stock')).rows[0].u,
+      )
+    ).value;
+
+  let r = await as(db, {}, async (tx) => ({
+    catalog: await count(tx, 'SELECT 1 FROM public.material_catalog'),
+    stock: await count(tx, 'SELECT 1 FROM public.material_stock'),
+    broken: await count(
+      tx,
+      'SELECT 1 FROM public.material_stock WHERE on_hand <> purchased + adjusted - used',
+    ),
+  }));
+  check(
+    ok(r) && r.value.catalog === r.value.stock && r.value.broken === 0,
+    'Cada material del catálogo tiene su fila de existencias (también los del seed)',
+    JSON.stringify(r.value),
+  );
+
+  // ── RLS ──
+  r = await as(db, T1, (tx) => count(tx, 'SELECT 1 FROM public.material_stock'));
+  check(ok(r) && r.value === 14, 'Técnico lee las existencias', `${r.value} ${errMsg(r)}`);
+  r = await as(db, T1, (tx) => count(tx, 'SELECT 1 FROM public.material_stock_movements'));
+  check(ok(r), 'Técnico lee los movimientos de bodega', errMsg(r));
+  r = await as(db, { role: 'authenticated', uid: '99999999-0000-4000-8000-000000000001' }, (tx) =>
+    count(tx, 'SELECT 1 FROM public.material_stock'),
+  );
+  check(ok(r) && r.value === 0, 'Usuario sin perfil no ve existencias', errMsg(r));
+
+  const movement = {
+    id: 'a0000000-0000-4000-8000-000000000001',
+    material_id: M,
+    kind: 'purchase',
+    quantity: 100,
+    note: 'Factura 001-123',
+    created_by: T1.uid,
+    sync_status: 'synced',
+    created_at: now,
+    updated_at: now,
+  };
+  r = await as(db, T1, (tx) => upsert(tx, 'material_stock_movements', movement));
+  check(denied(r), 'Técnico NO registra compras (RLS)', errMsg(r));
+  r = await as(db, OFF, (tx) =>
+    upsert(tx, 'material_stock_movements', { ...movement, created_by: ADM.uid }),
+  );
+  check(denied(r), 'Oficina NO registra movimientos a nombre de otro', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query(
+      `INSERT INTO public.material_stock (material_id, purchased, on_hand) VALUES ($1, 1, 1)
+       ON CONFLICT (material_id) DO UPDATE SET purchased = 999, on_hand = 999`,
+      [M],
+    ),
+  );
+  check(denied(r), 'Técnico NO escribe en material_stock', errMsg(r));
+  r = await as(db, ADM, (tx) =>
+    tx.query(
+      'UPDATE public.material_stock SET purchased = 999, on_hand = 999 WHERE material_id = $1',
+      [M],
+    ),
+  );
+  check(denied(r), 'Ni el admin escribe en material_stock (solo los triggers)', errMsg(r));
+  r = await as(db, T1, (tx) => tx.query('SELECT private.apply_stock_delta($1, 1, 0, 0)', [M]));
+  check(denied(r), 'Las funciones de los triggers no se pueden llamar desde la API', errMsg(r));
+
+  // ── Compras y ajustes ──
+  const s0 = await stockOf(M);
+  r = await as(db, OFF, (tx) =>
+    upsert(tx, 'material_stock_movements', { ...movement, created_by: OFF.uid }),
+  );
+  check(ok(r), 'Oficina registra una compra (upsert como la app)', errMsg(r));
+  let s1 = await stockOf(M);
+  check(
+    same(delta(s1, s0), { purchased: 100, adjusted: 0, used: 0, on_hand: 100 }),
+    'Compra de 100: purchased +100 y on_hand +100',
+    JSON.stringify({ s0, s1 }),
+  );
+  r = await as(db, OFF, (tx) =>
+    upsert(tx, 'material_stock_movements', { ...movement, created_by: OFF.uid }),
+  );
+  s1 = await stockOf(M);
+  check(
+    ok(r) && delta(s1, s0).on_hand === 100,
+    'Repetir el mismo upsert (reintento de subida) no duplica la compra',
+    `${JSON.stringify({ s0, s1 })} ${errMsg(r)}`,
+  );
+
+  const adjustment = {
+    ...movement,
+    id: 'a0000000-0000-4000-8000-000000000002',
+    kind: 'adjustment',
+    quantity: -5.5,
+    note: 'Conteo físico',
+    created_by: ADM.uid,
+  };
+  r = await as(db, ADM, (tx) => upsert(tx, 'material_stock_movements', adjustment));
+  check(ok(r), 'Admin registra un ajuste negativo', errMsg(r));
+  s1 = await stockOf(M);
+  check(
+    same(delta(s1, s0), { purchased: 100, adjusted: -5.5, used: 0, on_hand: 94.5 }),
+    'Ajuste de −5,5: adjusted −5,5 y on_hand +94,5 en total',
+    JSON.stringify({ s0, s1 }),
+  );
+
+  r = await as(db, OFF, (tx) =>
+    tx.query('UPDATE public.material_stock_movements SET quantity = 80 WHERE id = $1', [
+      movement.id,
+    ]),
+  );
+  s1 = await stockOf(M);
+  check(
+    ok(r) && same(delta(s1, s0), { purchased: 80, adjusted: -5.5, used: 0, on_hand: 74.5 }),
+    'Corregir la compra a 80 recalcula las existencias',
+    `${JSON.stringify({ s0, s1 })} ${errMsg(r)}`,
+  );
+  const m2s0 = await stockOf(M2);
+  r = await as(db, OFF, (tx) =>
+    tx.query(
+      `UPDATE public.material_stock_movements SET kind = 'adjustment', material_id = $1
+       WHERE id = $2`,
+      [M2, movement.id],
+    ),
+  );
+  s1 = await stockOf(M);
+  const m2s1 = await stockOf(M2);
+  check(
+    ok(r) &&
+      same(delta(s1, s0), { purchased: 0, adjusted: -5.5, used: 0, on_hand: -5.5 }) &&
+      same(delta(m2s1, m2s0), { purchased: 0, adjusted: 80, used: 0, on_hand: 80 }),
+    'Cambiar tipo y material de un movimiento mueve su cantidad al material nuevo',
+    `${JSON.stringify({ s0, s1, m2s0, m2s1 })} ${errMsg(r)}`,
+  );
+  r = await as(db, OFF, (tx) =>
+    tx.query(
+      `UPDATE public.material_stock_movements SET kind = 'purchase', material_id = $1
+       WHERE id = $2`,
+      [M, movement.id],
+    ),
+  );
+  check(
+    ok(r) && same(delta(await stockOf(M2), m2s0).on_hand, 0),
+    'Se deshace el cambio de tipo y material',
+    errMsg(r),
+  );
+
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.material_stock_movements SET quantity = 1 WHERE id = $1', [
+      movement.id,
+    ]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico NO modifica movimientos (0 filas)');
+  r = await as(db, T1, (tx) =>
+    tx.query('DELETE FROM public.material_stock_movements WHERE id = $1', [movement.id]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico NO borra movimientos (0 filas)');
+
+  for (const [label, row, constraint] of [
+    ['compra de 0', { kind: 'purchase', quantity: 0 }, 'chk_stock_movement_quantity'],
+    ['compra negativa', { kind: 'purchase', quantity: -1 }, 'chk_stock_movement_quantity'],
+    ['ajuste de 0', { kind: 'adjustment', quantity: 0 }, 'chk_stock_movement_quantity'],
+    ['tipo desconocido', { kind: 'gift', quantity: 1 }, 'chk_stock_movement_kind'],
+    ['nota de 501 caracteres', { note: 'x'.repeat(501) }, 'chk_stock_movement_note'],
+  ]) {
+    r = await as(db, OFF, (tx) =>
+      upsert(tx, 'material_stock_movements', {
+        ...movement,
+        id: 'a0000000-0000-4000-8000-000000000099',
+        created_by: OFF.uid,
+        ...row,
+      }),
+    );
+    check(violates(r, constraint), `Movimiento rechazado: ${label}`, errMsg(r));
+  }
+
+  // ── Uso en visitas ──
+  const s2 = await stockOf(M);
+  const use = {
+    id: 'a0000000-0000-4000-8000-000000000010',
+    visit_id: V1,
+    material_id: M,
+    is_custom: false,
+    material_code: 'CABLE-THHN-12',
+    material_name: 'Cable THHN #12 AWG',
+    unit: 'metro',
+    quantity: 10,
+    observations: null,
+    sync_status: 'synced',
+    created_at: now,
+    updated_at: now,
+  };
+  r = await as(db, T1, (tx) => upsert(tx, 'visit_materials', use));
+  check(ok(r), 'Técnico registra material del catálogo en su visita', errMsg(r));
+  let s3 = await stockOf(M);
+  check(
+    same(delta(s3, s2), { purchased: 0, adjusted: 0, used: 10, on_hand: -10 }),
+    'Uso de 10 en la visita: used +10 y on_hand −10 (el trigger escribe aunque el técnico no pueda)',
+    JSON.stringify({ s2, s3 }),
+  );
+  r = await as(db, T1, (tx) => upsert(tx, 'visit_materials', use));
+  s3 = await stockOf(M);
+  check(
+    ok(r) && delta(s3, s2).used === 10,
+    'Repetir el upsert del mismo material no duplica el uso',
+    errMsg(r),
+  );
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.visit_materials SET quantity = 4 WHERE id = $1', [use.id]),
+  );
+  s3 = await stockOf(M);
+  check(
+    ok(r) && same(delta(s3, s2), { purchased: 0, adjusted: 0, used: 4, on_hand: -4 }),
+    'Cambiar la cantidad a 4 ajusta el uso',
+    JSON.stringify({ s2, s3 }),
+  );
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.visit_materials SET observations = $1 WHERE id = $2', ['x', use.id]),
+  );
+  s3 = await stockOf(M);
+  check(ok(r) && delta(s3, s2).used === 4, 'Cambiar solo las observaciones no cambia el uso');
+
+  const m2s2 = await stockOf(M2);
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.visit_materials SET material_id = $1 WHERE id = $2', [M2, use.id]),
+  );
+  s3 = await stockOf(M);
+  const m2s3 = await stockOf(M2);
+  check(
+    ok(r) && delta(s3, s2).used === 0 && delta(m2s3, m2s2).used === 4,
+    'Cambiar el material de la fila pasa el uso al material nuevo',
+    `${JSON.stringify({ s2, s3, m2s2, m2s3 })} ${errMsg(r)}`,
+  );
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.visit_materials SET material_id = $1 WHERE id = $2', [M, use.id]),
+  );
+  check(
+    ok(r) && delta(await stockOf(M2), m2s2).used === 0,
+    'Se devuelve la fila al material original',
+  );
+
+  const usedBefore = await totalUsed();
+  const customUse = {
+    ...use,
+    id: 'a0000000-0000-4000-8000-000000000011',
+    material_id: null,
+    is_custom: true,
+    material_code: 'PERSONALIZADO',
+    material_name: 'Cinta especial inventario',
+    unit: 'rollo',
+    quantity: 7,
+  };
+  r = await as(db, T1, (tx) => upsert(tx, 'visit_materials', customUse));
+  check(ok(r), 'Técnico registra un material personalizado', errMsg(r));
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.visit_materials SET quantity = 9 WHERE id = $1', [customUse.id]),
+  );
+  const usedAfter = await totalUsed();
+  check(
+    ok(r) && usedBefore === usedAfter,
+    'Los materiales personalizados no cuentan en la bodega (alta ni cambio)',
+    `${usedBefore} → ${usedAfter} ${errMsg(r)}`,
+  );
+
+  r = await as(
+    db,
+    ADM,
+    async (tx) => {
+      await tx.query('DELETE FROM public.visits WHERE id = $1', [V1]);
+      return (
+        await tx.query(
+          'SELECT used::float8 AS used FROM public.material_stock WHERE material_id = $1',
+          [M],
+        )
+      ).rows[0];
+    },
+    { commit: false },
+  );
+  check(
+    ok(r) && round(r.value.used) === round(s2.used),
+    'Borrar la visita (cascada) devuelve sus materiales a la bodega (deshecho)',
+    `${JSON.stringify({ value: r.value, s2 })} ${errMsg(r)}`,
+  );
+
+  r = await as(db, T1, (tx) =>
+    tx.query('DELETE FROM public.visit_materials WHERE id = ANY($1)', [[use.id, customUse.id]]),
+  );
+  s3 = await stockOf(M);
+  check(
+    ok(r) && same(delta(s3, s2), { purchased: 0, adjusted: 0, used: 0, on_hand: 0 }),
+    'Quitar el material de la visita devuelve la cantidad a la bodega',
+    JSON.stringify({ s2, s3 }),
+  );
+
+  r = await as(db, OFF, (tx) =>
+    tx.query('DELETE FROM public.material_stock_movements WHERE id = ANY($1)', [
+      [movement.id, adjustment.id],
+    ]),
+  );
+  s3 = await stockOf(M);
+  check(
+    ok(r) &&
+      r.value.affectedRows === 2 &&
+      same(delta(s3, s0), { purchased: 0, adjusted: 0, used: 0, on_hand: 0 }),
+    'Borrar los movimientos deja las existencias como estaban',
+    `${JSON.stringify({ s0, s3 })} ${errMsg(r)}`,
+  );
+
+  // ── min_stock ──
+  r = await as(db, ADM, (tx) =>
+    tx.query('UPDATE public.material_catalog SET min_stock = 20 WHERE id = $1', [M]),
+  );
+  check(ok(r) && r.value.affectedRows === 1, 'Admin fija el mínimo de bodega', errMsg(r));
+  r = await as(db, OFF, (tx) =>
+    tx.query('UPDATE public.material_catalog SET min_stock = 1 WHERE id = $1', [M]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Oficina NO cambia el mínimo (0 filas)');
+  r = await as(db, T1, (tx) =>
+    tx.query('UPDATE public.material_catalog SET min_stock = 1 WHERE id = $1', [M]),
+  );
+  check(ok(r) && r.value.affectedRows === 0, 'Técnico NO cambia el mínimo (0 filas)');
+  r = await as(db, ADM, (tx) =>
+    tx.query('UPDATE public.material_catalog SET min_stock = -1 WHERE id = $1', [M]),
+  );
+  check(violates(r, 'chk_material_min_stock'), 'Mínimo negativo rechazado', errMsg(r));
+  r = await as(
+    db,
+    T1,
+    async (tx) =>
+      (
+        await tx.query(
+          'SELECT min_stock::float8 AS min_stock FROM public.material_catalog WHERE id = $1',
+          [M],
+        )
+      ).rows[0],
+  );
+  check(r.value?.min_stock === 20, 'Técnico lee el mínimo', JSON.stringify(r.value));
+
+  r = await as(
+    db,
+    ADM,
+    async (tx) => {
+      const { id } = (
+        await tx.query(
+          `INSERT INTO public.material_catalog (code, name, unit)
+           VALUES ('INV-NUEVO', 'Nuevo', 'unidad') RETURNING id`,
+        )
+      ).rows[0];
+      return (
+        await tx.query(
+          `SELECT on_hand::float8 AS on_hand, used::float8 AS used
+           FROM public.material_stock WHERE material_id = $1`,
+          [id],
+        )
+      ).rows[0];
+    },
+    { commit: false },
+  );
+  check(
+    ok(r) && r.value?.on_hand === 0 && r.value?.used === 0,
+    'Un material nuevo del catálogo nace con existencias en cero (deshecho)',
+    `${JSON.stringify(r.value)} ${errMsg(r)}`,
+  );
+
+  r = await as(db, ANON, (tx) =>
+    upsert(tx, 'material_stock_movements', {
+      ...movement,
+      id: 'a0000000-0000-4000-8000-000000000098',
+    }),
+  );
+  check(denied(r), 'Anónimo NO registra movimientos', errMsg(r));
+  r = await as(db, T2, (tx) => count(tx, 'SELECT 1 FROM public.material_stock'));
+  check(ok(r) && r.value === 14, 'Cualquier técnico activo lee las existencias (bodega única)');
+}
+
 /**
  * Actualización de un proyecto que YA tiene datos: se aplican solo las
  * migraciones anteriores, se cargan filas como las de producción y después
@@ -1074,13 +1665,13 @@ async function validateImprovementsRls(db, { T1, T2, OFF, V1, T2_VISIT, now }) {
  * transformarse sin perder nada.
  */
 async function validateUpgradeWithExistingData(PGlite) {
-  section('17. Actualización de un proyecto con datos (migraciones 20261118*)');
+  section('18. Actualización de un proyecto con datos (migraciones 20261118* y 20261122*)');
   const db = new PGlite();
   await db.exec(SUPABASE_STUB);
   const all = migrationFiles();
-  const previous = all.filter((m) => !m.name.startsWith(NEW_MIGRATIONS_PREFIX));
-  const added = all.filter((m) => m.name.startsWith(NEW_MIGRATIONS_PREFIX));
-  check(added.length === 3, 'Hay 3 migraciones nuevas', added.map((m) => m.name).join(', '));
+  const previous = all.filter((m) => !isNewMigration(m.name));
+  const added = all.filter((m) => isNewMigration(m.name));
+  check(added.length === 6, 'Hay 6 migraciones nuevas', added.map((m) => m.name).join(', '));
   for (const { sql } of previous) await db.exec(sql);
 
   const OLD = '2026-05-01T10:00:00.000Z';
@@ -1096,6 +1687,7 @@ async function validateUpgradeWithExistingData(PGlite) {
     frOrphan: '80000000-0000-4000-8000-000000000009',
     vm: '80000000-0000-4000-8000-000000000010',
     photo: '80000000-0000-4000-8000-000000000011',
+    annotation: '80000000-0000-4000-8000-000000000012',
   };
   await db.exec(`
     INSERT INTO auth.users (id, email) VALUES ('${ids.user}', 'existente@teins.com');
@@ -1119,6 +1711,10 @@ async function validateUpgradeWithExistingData(PGlite) {
         'metro', 12.5, '${OLD}', '${OLD}');
     INSERT INTO public.photos (id, visit_id, local_path, captured_at, width, height)
       VALUES ('${ids.photo}', '${ids.visit}', 'teins_photos/vieja.jpg', '${OLD}', 800, 600);
+    INSERT INTO public.annotations (id, visit_id, title, elements, canvas_width, canvas_height,
+        created_at, updated_at)
+      VALUES ('${ids.annotation}', '${ids.visit}', 'Plano existente',
+        '[{"type": "line", "points": [0.1, 0.2, 0.9, 0.8]}]', 300, 200, '${OLD}', '${OLD}');
   `);
   const snapshot = async () => ({
     fr: (
@@ -1138,6 +1734,12 @@ async function validateUpgradeWithExistingData(PGlite) {
         `SELECT id, visit_id, local_path, captured_at, width, height FROM public.photos ORDER BY id`,
       )
     ).rows,
+    an: (
+      await db.query(
+        `SELECT id, visit_id, title, elements, canvas_width, canvas_height, created_at, updated_at
+         FROM public.annotations ORDER BY id`,
+      )
+    ).rows,
   });
   const before = await snapshot();
 
@@ -1155,7 +1757,7 @@ async function validateUpgradeWithExistingData(PGlite) {
   const after = await snapshot();
   check(
     isDeepStrictEqual(after, before),
-    'Respuestas, materiales y fotos existentes se conservan intactos (incluido updated_at)',
+    'Respuestas, materiales, fotos y planos existentes se conservan intactos (incluido updated_at)',
     JSON.stringify({ before, after }),
   );
   const keys = Object.fromEntries(
@@ -1202,6 +1804,19 @@ async function validateUpgradeWithExistingData(PGlite) {
     )
   ).rows[0]?.is_nullable;
   check(nullable === 'YES', 'visit_materials.material_id admite NULL');
+  const annRow = (
+    await db.query(`SELECT format_version FROM public.annotations WHERE id = '${ids.annotation}'`)
+  ).rows[0];
+  check(annRow?.format_version === 1, 'El plano existente queda con format_version 1');
+  await db.query(
+    `INSERT INTO public.annotations (id, visit_id, title)
+     VALUES ('80000000-0000-4000-8000-000000000097', '${ids.visit}', 'Segundo plano')`,
+  );
+  check(
+    (await db.query(`SELECT 1 FROM public.annotations WHERE visit_id = '${ids.visit}'`)).rows
+      .length === 2,
+    'Tras migrar, la visita con su plano antiguo admite un segundo plano',
+  );
   let failed = null;
   try {
     await db.query(
@@ -1225,6 +1840,23 @@ async function validateUpgradeWithExistingData(PGlite) {
     (await db.query(`SELECT 1 FROM public.form_responses WHERE visit_id = '${ids.visit}'`)).rows
       .length === 2,
     'Tras migrar, la visita con su respuesta antigua admite un segundo formulario',
+  );
+  const stockRows = (
+    await db.query(
+      `SELECT material_id, purchased::float8 AS purchased, adjusted::float8 AS adjusted,
+              used::float8 AS used, on_hand::float8 AS on_hand
+       FROM public.material_stock`,
+    )
+  ).rows;
+  check(
+    stockRows.length === 1 &&
+      stockRows[0].material_id === ids.material &&
+      stockRows[0].purchased === 0 &&
+      stockRows[0].adjusted === 0 &&
+      stockRows[0].used === 12.5 &&
+      stockRows[0].on_hand === -12.5,
+    'Relleno: una fila de existencias por material, con el uso de las visitas existentes',
+    JSON.stringify(stockRows),
   );
   await db.close();
 }

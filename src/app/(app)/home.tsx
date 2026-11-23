@@ -94,6 +94,8 @@ export default function HomeScreen() {
                   ? () => router.push({ pathname: '/visits', params: { create: '1' } })
                   : undefined
               }
+              onInventory={() => router.push('/inventory')}
+              onAssistant={() => router.push('/assistant')}
             />
           </View>
         </ScrollView>

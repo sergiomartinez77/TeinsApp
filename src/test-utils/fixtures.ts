@@ -74,14 +74,44 @@ export const photoRow = (overrides: Row = {}): Row => ({
   ...overrides,
 });
 
+/** Plano en el formato 2 (centímetros, sin lienzo de referencia), como los crea la app. */
 export const annotationRow = (overrides: Row = {}): Row => ({
   id: 'a1',
   visit_id: 'v1',
   title: null,
   elements: '[]',
   base_image_path: null,
-  canvas_width: 400,
-  canvas_height: 300,
+  canvas_width: null,
+  canvas_height: null,
+  format_version: 2,
+  sync_status: 'pendingSync',
+  created_at: '2026-06-01T09:00:00.000Z',
+  updated_at: '2026-06-01T09:00:00.000Z',
+  ...overrides,
+});
+
+/** Figura de la biblioteca de un técnico (una línea de 100 cm). */
+export const figureRow = (overrides: Row = {}): Row => ({
+  id: 'f1',
+  technician_id: TECH_A,
+  name: 'Figura uno',
+  elements: JSON.stringify([
+    {
+      id: 'fe1',
+      type: 'line',
+      points: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      color: 0xff000000,
+      strokeWidth: 3,
+      text: null,
+      fontSize: null,
+      opacity: 1,
+    },
+  ]),
+  width: 100,
+  height: 0,
   sync_status: 'pendingSync',
   created_at: '2026-06-01T09:00:00.000Z',
   updated_at: '2026-06-01T09:00:00.000Z',
@@ -118,6 +148,35 @@ export const templateRow = (overrides: Row = {}): Row => ({
   is_active: 1,
   created_at: '2026-01-01T00:00:00.000Z',
   updated_at: '2026-01-01T00:00:00.000Z',
+  ...overrides,
+});
+
+/** Existencias calculadas por el servidor (`id` = `material_id`). */
+export const materialStockRow = (overrides: Row = {}): Row => {
+  const materialId = (overrides.material_id ?? overrides.id ?? 'm1') as string;
+  return {
+    id: materialId,
+    material_id: materialId,
+    purchased: 0,
+    adjusted: 0,
+    used: 0,
+    on_hand: 0,
+    updated_at: '2026-06-01T09:00:00.000Z',
+    ...overrides,
+  };
+};
+
+/** Compra ya sincronizada (llegó del servidor). */
+export const stockMovementRow = (overrides: Row = {}): Row => ({
+  id: 'mv1',
+  material_id: 'm1',
+  kind: 'purchase',
+  quantity: 10,
+  note: null,
+  created_by: 'oficina',
+  sync_status: 'synced',
+  created_at: '2026-06-01T09:00:00.000Z',
+  updated_at: '2026-06-01T09:00:00.000Z',
   ...overrides,
 });
 

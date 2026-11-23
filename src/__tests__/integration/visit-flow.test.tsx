@@ -1,8 +1,9 @@
 import { renderHook } from '@testing-library/react-native';
 
-import { ANNOTATION_BY_VISIT_SQL } from '@/features/annotations/services/annotation.queries';
+import { ANNOTATIONS_BY_VISIT_SQL } from '@/features/annotations/services/annotation.queries';
 import {
   ANNOTATION_MESSAGES,
+  createAnnotation,
   saveAnnotation,
 } from '@/features/annotations/services/annotation.service';
 import {
@@ -38,7 +39,7 @@ import { createTestDatabase, type Row, type TestDatabase } from '@/test-utils/te
 /**
  * Flujo completo de una visita a nivel de servicios, sobre SQLite real y sin
  * simular servicios ni hooks: crear → iniciar → formulario → materiales →
- * foto → anotación → completar formulario → finalizar → solo lectura → resumen.
+ * foto → plano → completar formulario → finalizar → solo lectura → resumen.
  */
 
 jest.mock('@powersync/react', () => jest.requireActual('@/test-utils/powersync-react'));
@@ -55,9 +56,9 @@ const stroke: AnnotationElement = {
   id: 'trazo-1',
   type: 'freeStroke',
   points: [
-    { x: 0.1, y: 0.1 },
-    { x: 0.2, y: 0.3 },
-    { x: 0.4, y: 0.2 },
+    { x: 10, y: 10 },
+    { x: 20, y: 30 },
+    { x: 40, y: 20 },
   ],
   color: 0xff1565c0,
   strokeWidth: 3,
@@ -131,7 +132,7 @@ it('recorre una visita de principio a fin y después queda cerrada a toda escrit
   });
   expect(removed.ok).toBe(true);
 
-  // 4. Foto y anotación.
+  // 4. Foto y plano (primero se crea el plano y después se guardan sus elementos).
   const photo = await addPhoto(
     db,
     files,
@@ -140,13 +141,16 @@ it('recorre una visita de principio a fin y después queda cerrada a toda escrit
     at(6),
   );
   if (!photo.ok) throw new Error('no se guardó la foto');
+  const plan = await createAnnotation(db, TECH_A, { visitId, title: '  Planta baja  ' }, at(7));
+  if (!plan.ok) throw new Error('no se creó el plano');
+  const annotationId = plan.data.id;
   const annotated = await saveAnnotation(
     db,
     TECH_A,
-    { visitId, elements: [stroke], canvasWidth: 390, canvasHeight: 600 },
+    { visitId, annotationId, elements: [stroke] },
     at(7),
   );
-  expect(annotated.ok).toBe(true);
+  expect(annotated.ok && annotated.data.elements).toEqual([stroke]);
 
   // 5. Completar el formulario y finalizar la visita.
   const formDone = await completeFormResponse(
@@ -212,12 +216,14 @@ it('recorre una visita de principio a fin y después queda cerrada a toda escrit
   const annotationWrite = await saveAnnotation(
     db,
     TECH_A,
-    { visitId, elements: [], canvasWidth: 1, canvasHeight: 1 },
+    { visitId, annotationId, elements: [] },
     later,
   );
   expect(!annotationWrite.ok && annotationWrite.error.message).toBe(
     ANNOTATION_MESSAGES.visitClosed,
   );
+  const planCreate = await createAnnotation(db, TECH_A, { visitId, title: 'Otro' }, later);
+  expect(!planCreate.ok && planCreate.error.code).toBe('visit_closed');
 
   const restart = await startVisit(db, TECH_A, visitId, later);
   expect(!restart.ok && restart.error.code).toBe('invalid_transition');
@@ -247,7 +253,9 @@ it('recorre una visita de principio a fin y después queda cerrada a toda escrit
     is_complete: 1,
     completed_at: at(8).toISOString(),
   });
-  expect((await db.get<Row>(ANNOTATION_BY_VISIT_SQL, [visitId])).canvas_width).toBe(390);
+  expect(await db.getAll<Row>(ANNOTATIONS_BY_VISIT_SQL, [visitId])).toMatchObject([
+    { id: annotationId, title: 'Planta baja', format_version: 2, updated_at: at(7).toISOString() },
+  ]);
 
   const { result } = await renderHook(() => useVisitSummary(TECH_A, visitFromRow(storedVisit)));
   expect(result.current).toEqual({
@@ -255,6 +263,6 @@ it('recorre una visita de principio a fin y después queda cerrada a toda escrit
     'form-select': '1 formulario · 1 completado',
     materials: '1 material · 12,5 metro',
     photos: '1 fotografía · 1 por subir',
-    annotations: '1 elemento',
+    annotations: '1 plano · 1 elemento',
   });
 });

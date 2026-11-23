@@ -1,13 +1,21 @@
-import { argbToCss, type AnnotationElement, type CanvasPoint } from '@/models/annotation.model';
+import { argbToCss, type AnnotationElement, type PlanPoint } from '@/models/annotation.model';
 
-import { DRAWING_THRESHOLDS } from '../constants';
+import {
+  ANGLE_SNAP_DEGREES,
+  DRAWING_THRESHOLDS,
+  GRID_MIN_SPACING_PX,
+  GRID_STEPS_CM,
+  PLAN_ZOOM,
+  SCALE_BAR_TARGET_PX,
+} from '../constants';
 
 /**
- * Geometría del dibujo, sin dependencias nativas: el canvas convierte las
+ * Geometría del plano, sin dependencias nativas: el lienzo convierte las
  * cadenas de trazado SVG con Skia y aquí se prueban sin él.
  *
- * Unidades: los elementos guardan puntos normalizados (0–1); los cálculos
- * de dibujo y de toque se hacen en píxeles del canvas actual.
+ * Unidades: los elementos guardan puntos en centímetros del plano. La vista
+ * (`Viewport`) convierte a píxeles de pantalla: pantalla = plano × escala + t.
+ * Los grosores son píxeles de pantalla: no cambian con el zoom.
  */
 
 export interface Size {
@@ -15,88 +23,336 @@ export interface Size {
   readonly height: number;
 }
 
-/** Punto en píxeles del canvas. */
-export interface PixelPoint {
-  readonly x: number;
-  readonly y: number;
+/** Punto (en centímetros del plano o en píxeles, según el contexto). */
+export type Point = PlanPoint;
+/** @deprecated Nombre antiguo de {@link Point}. */
+export type PixelPoint = Point;
+
+/** Vista del plano: `scale` son píxeles por centímetro; `tx`/`ty`, el desplazamiento. */
+export interface Viewport {
+  readonly scale: number;
+  readonly tx: number;
+  readonly ty: number;
 }
 
-export interface CanvasFrame extends Size {
-  /** Desplazamiento para centrar el canvas dentro del área (franjas alrededor). */
-  readonly offsetX: number;
-  readonly offsetY: number;
+export interface Bounds {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
 }
 
 const isValidSize = (size: Size | null | undefined): size is Size =>
   Boolean(size && size.width > 0 && size.height > 0);
 
+// ── Vista ────────────────────────────────────────────────────────────────────
+
+/** Escala dentro de los límites del zoom. */
+export function clampScale(scale: number): number {
+  if (!Number.isFinite(scale) || scale <= 0) return PLAN_ZOOM.initial;
+  return Math.min(PLAN_ZOOM.max, Math.max(PLAN_ZOOM.min, scale));
+}
+
+export function screenToWorld(point: Point, view: Viewport): Point {
+  return { x: (point.x - view.tx) / view.scale, y: (point.y - view.ty) / view.scale };
+}
+
+export function worldToScreen(point: Point, view: Viewport): Point {
+  return { x: point.x * view.scale + view.tx, y: point.y * view.scale + view.ty };
+}
+
+/** Acerca o aleja `factor` veces manteniendo fijo el punto de pantalla `focal`. */
+export function zoomAround(view: Viewport, focal: Point, factor: number): Viewport {
+  const scale = clampScale(view.scale * factor);
+  const world = screenToWorld(focal, view);
+  return { scale, tx: focal.x - world.x * scale, ty: focal.y - world.y * scale };
+}
+
+/** Centro de la pantalla en centímetros del plano. */
+export function viewCenter(view: Viewport, area: Size): Point {
+  return screenToWorld({ x: area.width / 2, y: area.height / 2 }, view);
+}
+
 /**
- * Canvas lo más grande posible dentro del área con la proporción de la
- * referencia, centrado. Sin referencia ocupa toda el área.
+ * Vista que encuadra `bounds` en el área con un margen. Sin contenido (o con
+ * un área vacía) usa el zoom inicial con el origen del plano en el centro.
  */
-export function fitCanvas(area: Size, reference: Size | null): CanvasFrame {
-  if (!isValidSize(area)) return { width: 0, height: 0, offsetX: 0, offsetY: 0 };
-  if (!isValidSize(reference)) {
-    return { width: area.width, height: area.height, offsetX: 0, offsetY: 0 };
+export function fitViewport(bounds: Bounds | null, area: Size): Viewport {
+  const centerX = area.width / 2;
+  const centerY = area.height / 2;
+  if (!bounds || !isValidSize(area)) {
+    return { scale: PLAN_ZOOM.initial, tx: centerX, ty: centerY };
   }
-  const scale = Math.min(area.width / reference.width, area.height / reference.height);
-  const width = reference.width * scale;
-  const height = reference.height * scale;
+  const padding = Math.min(PLAN_ZOOM.fitPaddingPx, area.width / 4, area.height / 4);
+  const width = bounds.maxX - bounds.minX;
+  const height = bounds.maxY - bounds.minY;
+  const scaleX = width > 0 ? (area.width - padding * 2) / width : Number.POSITIVE_INFINITY;
+  const scaleY = height > 0 ? (area.height - padding * 2) / height : Number.POSITIVE_INFINITY;
+  const fitted = Math.min(scaleX, scaleY);
+  // Un solo punto (o una línea recta) no fija el zoom en las dos direcciones.
+  const scale = clampScale(Number.isFinite(fitted) ? fitted : PLAN_ZOOM.initial);
+  const middleX = (bounds.minX + bounds.maxX) / 2;
+  const middleY = (bounds.minY + bounds.maxY) / 2;
+  return { scale, tx: centerX - middleX * scale, ty: centerY - middleY * scale };
+}
+
+// ── Cuadrícula y escala ──────────────────────────────────────────────────────
+
+export interface GridSpacing {
+  /** Paso de la cuadrícula fina en centímetros. */
+  readonly minor: number;
+  /** Paso de la cuadrícula marcada (el siguiente paso de la lista). */
+  readonly major: number;
+}
+
+/** Pasos de la cuadrícula para la escala: la fina deja al menos ~14 px entre líneas. */
+export function gridSpacing(scale: number): GridSpacing {
+  const steps = GRID_STEPS_CM;
+  const index = steps.findIndex((step) => step * scale >= GRID_MIN_SPACING_PX);
+  const minorIndex = index === -1 ? steps.length - 1 : index;
+  const minor = steps[minorIndex] ?? 1;
+  const major = steps[minorIndex + 1] ?? minor * 10;
+  return { minor, major };
+}
+
+/** Longitudes "redondas" en cm (1, 2, 5 × 10ⁿ) para la barra de escala. */
+function niceLengths(): number[] {
+  const lengths: number[] = [];
+  for (let power = 0; power <= 6; power += 1) {
+    for (const base of [1, 2, 5]) lengths.push(base * 10 ** power);
+  }
+  return lengths;
+}
+const NICE_LENGTHS = niceLengths();
+
+export interface ScaleBar {
+  /** Longitud representada en centímetros. */
+  readonly lengthCm: number;
+  /** Ancho de la barra en píxeles. */
+  readonly widthPx: number;
+  readonly label: string;
+}
+
+/** Barra de escala: la longitud redonda más larga que cabe en ~90 px. */
+export function scaleBar(scale: number, targetPx: number = SCALE_BAR_TARGET_PX): ScaleBar {
+  let lengthCm = NICE_LENGTHS[0] ?? 1;
+  for (const candidate of NICE_LENGTHS) {
+    if (candidate * scale <= targetPx) lengthCm = candidate;
+  }
+  return { lengthCm, widthPx: lengthCm * scale, label: formatLength(lengthCm) };
+}
+
+/** Número con coma decimal y sin ceros sobrantes a la derecha de la coma. */
+function decimalFormat(value: number, decimals: number): string {
+  const fixed = value.toFixed(decimals);
+  const trimmed = fixed.includes('.') ? fixed.replace(/\.?0+$/, '') : fixed;
+  return trimmed.replace('.', ',');
+}
+
+/**
+ * Longitud legible en español: "35 cm", "2,35 m", "1,2 km". Por debajo de
+ * 1 cm, milímetros.
+ */
+export function formatLength(cm: number): string {
+  const value = Math.abs(cm);
+  // La unidad se elige con el valor ya redondeado: 99,6 cm es "1 m", no "100 cm".
+  const below = (amount: number, decimals: number, limit: number) =>
+    Number(amount.toFixed(decimals)) < limit;
+  if (below(value * 10, 0, 10)) return `${decimalFormat(value * 10, 0)} mm`;
+  const cmDecimals = value < 10 ? 1 : 0;
+  if (below(value, cmDecimals, 100)) return `${decimalFormat(value, cmDecimals)} cm`;
+  if (below(value / 100, 2, 1000)) return `${decimalFormat(value / 100, 2)} m`;
+  return `${decimalFormat(value / 100000, 2)} km`;
+}
+
+// ── Ajuste (snap) ────────────────────────────────────────────────────────────
+
+/** Punto en la intersección de la cuadrícula más cercana. */
+export function snapToGrid(point: Point, step: number): Point {
+  if (!(step > 0)) return point;
+  return { x: Math.round(point.x / step) * step, y: Math.round(point.y / step) * step };
+}
+
+/**
+ * Extremo de una línea ajustado a múltiplos de 15° y con la longitud
+ * redondeada al paso de la cuadrícula.
+ */
+export function snapSegmentEnd(
+  start: Point,
+  end: Point,
+  step: number,
+  degrees: number = ANGLE_SNAP_DEGREES,
+): Point {
+  const length = distance(start, end);
+  if (length === 0) return end;
+  const increment = (degrees * Math.PI) / 180;
+  const angle = Math.round(Math.atan2(end.y - start.y, end.x - start.x) / increment) * increment;
+  const snappedLength = step > 0 ? Math.max(step, Math.round(length / step) * step) : length;
+  const round = (value: number) => Math.round(value * 1000) / 1000;
   return {
-    width,
-    height,
-    offsetX: (area.width - width) / 2,
-    offsetY: (area.height - height) / 2,
+    x: round(start.x + Math.cos(angle) * snappedLength),
+    y: round(start.y + Math.sin(angle) * snappedLength),
   };
 }
 
-/** Factor para los grosores y tamaños guardados: ancho actual / ancho de referencia. */
-export function strokeScale(canvasWidth: number, referenceWidth: number | null): number {
-  if (!referenceWidth || referenceWidth <= 0 || canvasWidth <= 0) return 1;
-  return canvasWidth / referenceWidth;
-}
+// ── Puntos y límites ─────────────────────────────────────────────────────────
 
-const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
-
-/** Píxeles del canvas → coordenadas normalizadas (recortadas a 0–1). */
-export function normalizePoint(point: PixelPoint, size: Size): CanvasPoint {
-  if (!isValidSize(size)) return { x: 0, y: 0 };
-  return { x: clamp01(point.x / size.width), y: clamp01(point.y / size.height) };
-}
-
-/** Coordenadas normalizadas → píxeles del canvas. */
-export function denormalizePoint(point: CanvasPoint, size: Size): PixelPoint {
-  return { x: point.x * size.width, y: point.y * size.height };
-}
-
-export function distance(a: PixelPoint, b: PixelPoint): number {
+export function distance(a: Point, b: Point): number {
   return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
-/** Añade un punto al trazo salvo que esté demasiado cerca del anterior. */
+/** Añade un punto al trazo salvo que esté a menos de `minDistance` del anterior. */
 export function appendPoint(
-  points: readonly PixelPoint[],
-  point: PixelPoint,
+  points: readonly Point[],
+  point: Point,
   minDistance: number = DRAWING_THRESHOLDS.minPointDistancePx,
-): readonly PixelPoint[] {
+): readonly Point[] {
   const last = points[points.length - 1];
   if (last && distance(last, point) < minDistance) return points;
   return [...points, point];
 }
 
-// ── Trazados SVG ─────────────────────────────────────────────────────────────
+export function boundsOfPoints(points: readonly Point[]): Bounds | null {
+  const [first] = points;
+  if (!first) return null;
+  let minX = first.x;
+  let minY = first.y;
+  let maxX = first.x;
+  let maxY = first.y;
+  for (const point of points) {
+    minX = Math.min(minX, point.x);
+    minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x);
+    maxY = Math.max(maxY, point.y);
+  }
+  return { minX, minY, maxX, maxY };
+}
 
-const num = (value: number) => String(Math.round(value * 100) / 100);
-const pair = (point: PixelPoint) => `${num(point.x)} ${num(point.y)}`;
+export function unionBounds(a: Bounds | null, b: Bounds | null): Bounds | null {
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+  };
+}
+
+/** Rectángulo normalizado a partir de dos esquinas cualesquiera. */
+export function boundsFromCorners(a: Point, b: Point): Bounds {
+  return {
+    minX: Math.min(a.x, b.x),
+    minY: Math.min(a.y, b.y),
+    maxX: Math.max(a.x, b.x),
+    maxY: Math.max(a.y, b.y),
+  };
+}
+
+export function containsBounds(outer: Bounds, inner: Bounds): boolean {
+  return (
+    inner.minX >= outer.minX &&
+    inner.maxX <= outer.maxX &&
+    inner.minY >= outer.minY &&
+    inner.maxY <= outer.maxY
+  );
+}
+
+export function containsPoint(bounds: Bounds, point: Point, margin = 0): boolean {
+  return (
+    point.x >= bounds.minX - margin &&
+    point.x <= bounds.maxX + margin &&
+    point.y >= bounds.minY - margin &&
+    point.y <= bounds.maxY + margin
+  );
+}
+
+/** Ancho aproximado de un carácter respecto al tamaño de letra. */
+const CHAR_WIDTH_RATIO = 0.55;
+/** Tamaño de letra (cm) si un texto guardado no trae uno. */
+const DEFAULT_FONT_SIZE_CM = 18;
+
+/** Rectángulo aproximado de un texto: el punto queda a media altura, a la izquierda. */
+function textBox(anchor: Point, text: string, fontSize: number): Bounds {
+  return {
+    minX: anchor.x,
+    maxX: anchor.x + text.length * fontSize * CHAR_WIDTH_RATIO,
+    minY: anchor.y - fontSize / 2,
+    maxY: anchor.y + fontSize / 2,
+  };
+}
+
+/** Radio del marcador en píxeles de pantalla según el grosor. */
+export function markerRadius(strokeWidth: number): number {
+  return 4 + strokeWidth * 1.5;
+}
+
+/**
+ * Límites de un elemento en centímetros. `scale` (píxeles por cm) hace falta
+ * para lo que mide lo mismo en pantalla con cualquier zoom (el marcador).
+ */
+export function elementBounds(element: AnnotationElement, scale: number): Bounds | null {
+  const [first] = element.points;
+  if (!first) return null;
+  switch (element.type) {
+    case 'text':
+      return textBox(first, element.text ?? '', element.fontSize ?? DEFAULT_FONT_SIZE_CM);
+    case 'marker': {
+      const r = markerRadius(element.strokeWidth) / scale;
+      return { minX: first.x - r, minY: first.y - r, maxX: first.x + r, maxY: first.y + r };
+    }
+    case 'circle': {
+      const r = distance(first, element.points[element.points.length - 1] ?? first);
+      return { minX: first.x - r, minY: first.y - r, maxX: first.x + r, maxY: first.y + r };
+    }
+    case 'dimension': {
+      const line = boundsOfPoints(element.points);
+      const label = dimensionLabel(element);
+      return unionBounds(line, label ? textBox(label.anchor, label.text, label.fontSize) : null);
+    }
+    default:
+      return boundsOfPoints(element.points);
+  }
+}
+
+/** Límites de todos los elementos, o `null` si no hay ninguno. */
+export function contentBounds(
+  elements: readonly AnnotationElement[],
+  scale: number,
+): Bounds | null {
+  return elements.reduce<Bounds | null>(
+    (bounds, element) => unionBounds(bounds, elementBounds(element, scale)),
+    null,
+  );
+}
+
+/** Desplaza un elemento `dx`, `dy` centímetros (con otro id si se pide). */
+export function translateElement(
+  element: AnnotationElement,
+  dx: number,
+  dy: number,
+  id: string = element.id,
+): AnnotationElement {
+  return {
+    ...element,
+    id,
+    points: element.points.map((point) => ({ x: point.x + dx, y: point.y + dy })),
+  };
+}
+
+// ── Trazados SVG (en centímetros del plano) ──────────────────────────────────
+
+const num = (value: number) => String(Math.round(value * 1000) / 1000);
+const pair = (point: Point) => `${num(point.x)} ${num(point.y)}`;
 
 /**
  * Trazo libre suavizado: curvas cuadráticas que pasan por los puntos medios
  * y usan cada punto como control. Un solo punto dibuja un punto.
  */
-export function freeStrokePath(points: readonly PixelPoint[]): string {
+export function freeStrokePath(points: readonly Point[]): string {
   const [first, second] = points;
   if (!first) return '';
-  if (!second) return `M ${pair(first)} L ${pair({ x: first.x + 0.01, y: first.y })}`;
+  if (!second) return `M ${pair(first)} L ${pair({ x: first.x + 0.001, y: first.y })}`;
   if (points.length === 2) return `M ${pair(first)} L ${pair(second)}`;
 
   let path = `M ${pair(first)}`;
@@ -111,7 +367,7 @@ export function freeStrokePath(points: readonly PixelPoint[]): string {
   return last ? `${path} L ${pair(last)}` : path;
 }
 
-export function linePath(start: PixelPoint, end: PixelPoint): string {
+export function linePath(start: Point, end: Point): string {
   return `M ${pair(start)} L ${pair(end)}`;
 }
 
@@ -119,37 +375,29 @@ export function linePath(start: PixelPoint, end: PixelPoint): string {
 const ARROW_MIN_HEAD_PX = 12;
 const ARROW_HEAD_ANGLE = Math.PI / 6;
 
-/** Extremos de las dos alas de la punta, que nacen en `end`. */
-export function arrowHead(
-  start: PixelPoint,
-  end: PixelPoint,
-  strokeWidthPx: number,
-): [PixelPoint, PixelPoint] {
-  const length = Math.max(ARROW_MIN_HEAD_PX, strokeWidthPx * 4);
+/** Extremos de las dos alas de la punta (de longitud `headLength`), que nacen en `end`. */
+export function arrowHead(start: Point, end: Point, headLength: number): [Point, Point] {
   const angle = Math.atan2(end.y - start.y, end.x - start.x);
-  const wing = (offset: number): PixelPoint => ({
-    x: end.x - length * Math.cos(angle + offset),
-    y: end.y - length * Math.sin(angle + offset),
+  const wing = (offset: number): Point => ({
+    x: end.x - headLength * Math.cos(angle + offset),
+    y: end.y - headLength * Math.sin(angle + offset),
   });
   return [wing(-ARROW_HEAD_ANGLE), wing(ARROW_HEAD_ANGLE)];
 }
 
 /** Línea con punta en el extremo final. */
-export function arrowPath(start: PixelPoint, end: PixelPoint, strokeWidthPx: number): string {
-  const [left, right] = arrowHead(start, end, strokeWidthPx);
+export function arrowPath(start: Point, end: Point, headLength: number): string {
+  const [left, right] = arrowHead(start, end, headLength);
   return `${linePath(start, end)} M ${pair(left)} L ${pair(end)} L ${pair(right)}`;
 }
 
 /** Rectángulo definido por dos esquinas opuestas. */
-export function rectanglePath(a: PixelPoint, b: PixelPoint): string {
-  const left = Math.min(a.x, b.x);
-  const right = Math.max(a.x, b.x);
-  const top = Math.min(a.y, b.y);
-  const bottom = Math.max(a.y, b.y);
-  return `M ${pair({ x: left, y: top })} L ${pair({ x: right, y: top })} L ${pair({
-    x: right,
-    y: bottom,
-  })} L ${pair({ x: left, y: bottom })} Z`;
+export function rectanglePath(a: Point, b: Point): string {
+  const { minX, minY, maxX, maxY } = boundsFromCorners(a, b);
+  return `M ${pair({ x: minX, y: minY })} L ${pair({ x: maxX, y: minY })} L ${pair({
+    x: maxX,
+    y: maxY,
+  })} L ${pair({ x: minX, y: maxY })} Z`;
 }
 
 export interface CircleGeometry {
@@ -159,12 +407,12 @@ export interface CircleGeometry {
 }
 
 /** Círculo: el primer punto es el centro y el segundo un punto del borde. */
-export function circleGeometry(center: PixelPoint, edge: PixelPoint): CircleGeometry {
+export function circleGeometry(center: Point, edge: Point): CircleGeometry {
   return { cx: center.x, cy: center.y, r: distance(center, edge) };
 }
 
 /** Círculo como dos semicircunferencias. */
-export function circlePath(center: PixelPoint, edge: PixelPoint): string {
+export function circlePath(center: Point, edge: Point): string {
   const { cx, cy, r } = circleGeometry(center, edge);
   const radius = num(r);
   return `M ${num(cx - r)} ${num(cy)} A ${radius} ${radius} 0 1 0 ${num(cx + r)} ${num(
@@ -172,144 +420,144 @@ export function circlePath(center: PixelPoint, edge: PixelPoint): string {
   )} A ${radius} ${radius} 0 1 0 ${num(cx - r)} ${num(cy)} Z`;
 }
 
-/** Líneas de la cuadrícula del lienzo: `columns` celdas cuadradas a lo ancho. */
-export function gridPath(size: Size, columns: number): string {
-  if (!isValidSize(size) || columns <= 0) return '';
-  const cell = size.width / columns;
-  const segments: string[] = [];
-  for (let x = cell; x < size.width - 0.5; x += cell) {
-    segments.push(`M ${num(x)} 0 L ${num(x)} ${num(size.height)}`);
-  }
-  for (let y = cell; y < size.height - 0.5; y += cell) {
-    segments.push(`M 0 ${num(y)} L ${num(size.width)} ${num(y)}`);
-  }
-  return segments.join(' ');
+/** Cota: la línea y una marca perpendicular de `tick` cm en cada extremo. */
+export function dimensionPath(start: Point, end: Point, tick: number): string {
+  const length = distance(start, end);
+  if (length === 0) return linePath(start, end);
+  const nx = (-(end.y - start.y) / length) * (tick / 2);
+  const ny = ((end.x - start.x) / length) * (tick / 2);
+  const mark = (point: Point) =>
+    `M ${pair({ x: point.x - nx, y: point.y - ny })} L ${pair({ x: point.x + nx, y: point.y + ny })}`;
+  return `${linePath(start, end)} ${mark(start)} ${mark(end)}`;
 }
 
-// ── Datos de dibujo por elemento ─────────────────────────────────────────────
-
-/** Radio del marcador (en unidades de la referencia) según el grosor elegido. */
-export function markerRadius(strokeWidth: number): number {
-  return 4 + strokeWidth * 1.5;
+export interface DimensionLabel {
+  readonly text: string;
+  /** Punto de inicio del texto (a media altura). */
+  readonly anchor: Point;
+  readonly fontSize: number;
 }
 
-/** Ancho aproximado de un carácter respecto al tamaño de letra (para tocar texto). */
-const CHAR_WIDTH_RATIO = 0.55;
-const DEFAULT_FONT_SIZE = 18;
+/** Texto de una cota: la longitud, centrado sobre la línea. */
+export function dimensionLabel(element: AnnotationElement): DimensionLabel | null {
+  const [start] = element.points;
+  const end = element.points[element.points.length - 1];
+  if (!start || !end || element.points.length < 2) return null;
+  const length = distance(start, end);
+  const text = formatLength(length);
+  const fontSize = element.fontSize ?? Math.max(1, length / 8);
+  const width = text.length * fontSize * CHAR_WIDTH_RATIO;
+  const middle = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+  return {
+    text,
+    fontSize,
+    anchor: { x: middle.x - width / 2, y: middle.y - fontSize * 0.9 },
+  };
+}
 
-export type ElementDrawing =
+// ── Qué se pinta para cada elemento ──────────────────────────────────────────
+
+export type DrawingPart =
   | {
       readonly kind: 'stroke';
+      /** Trazado en centímetros del plano. */
       readonly path: string;
-      readonly color: string;
+      /** Grosor en píxeles de pantalla. */
       readonly strokeWidth: number;
-      readonly opacity: number;
     }
   | {
       readonly kind: 'text';
-      /** Esquina izquierda de la línea base. */
+      /** Esquina izquierda de la línea base, en centímetros. */
       readonly x: number;
       readonly y: number;
+      /** Tamaño de letra en centímetros. */
       readonly fontSize: number;
       readonly text: string;
-      readonly color: string;
-      readonly opacity: number;
     }
   | {
       readonly kind: 'marker';
       readonly cx: number;
       readonly cy: number;
+      /** Radio y borde en píxeles de pantalla. */
       readonly r: number;
       readonly borderWidth: number;
-      readonly color: string;
-      readonly opacity: number;
     };
 
-const pixelPoints = (element: AnnotationElement, size: Size) =>
-  element.points.map((point) => denormalizePoint(point, size));
-
-/** Rectángulo aproximado que ocupa un texto: el punto queda a media altura, a la izquierda. */
-function textBox(element: AnnotationElement, size: Size, scale: number) {
-  const anchor = pixelPoints(element, size)[0] ?? { x: 0, y: 0 };
-  const fontSize = (element.fontSize ?? DEFAULT_FONT_SIZE) * scale;
-  const width = (element.text ?? '').length * fontSize * CHAR_WIDTH_RATIO;
-  return {
-    anchor,
-    fontSize,
-    left: anchor.x,
-    right: anchor.x + width,
-    top: anchor.y - fontSize / 2,
-    bottom: anchor.y + fontSize / 2,
-  };
+export interface ElementDrawing {
+  readonly color: string;
+  readonly opacity: number;
+  readonly parts: readonly DrawingPart[];
 }
 
+const textPart = (anchor: Point, text: string, fontSize: number): DrawingPart => ({
+  kind: 'text',
+  x: anchor.x,
+  // Línea base para que el texto quede centrado en vertical sobre el punto.
+  y: anchor.y + fontSize * 0.35,
+  fontSize,
+  text,
+});
+
 /**
- * Qué hay que pintar para un elemento en un canvas de `size` píxeles.
- * `scale` multiplica grosores y tamaños de letra (ver `strokeScale`).
+ * Qué hay que pintar para un elemento. `scale` (píxeles por cm) fija lo que
+ * mide lo mismo en pantalla con cualquier zoom: puntas de flecha y marcas de
+ * las cotas.
  */
-export function elementDrawing(
-  element: AnnotationElement,
-  size: Size,
-  scale: number,
-): ElementDrawing | null {
-  const points = pixelPoints(element, size);
+export function elementDrawing(element: AnnotationElement, scale: number): ElementDrawing | null {
+  const { points } = element;
   const [first, second] = points;
   if (!first) return null;
-  const color = argbToCss(element.color);
-  const strokeWidth = element.strokeWidth * scale;
-  const stroke = (path: string): ElementDrawing => ({
+  const end = points[points.length - 1] ?? first;
+  const stroke = (path: string): DrawingPart => ({
     kind: 'stroke',
     path,
-    color,
-    strokeWidth,
-    opacity: element.opacity,
+    strokeWidth: element.strokeWidth,
   });
-  const end = points[points.length - 1] ?? first;
+  const drawing = (parts: DrawingPart[]): ElementDrawing => ({
+    color: argbToCss(element.color),
+    opacity: element.opacity,
+    parts,
+  });
 
   switch (element.type) {
     case 'freeStroke':
-      return stroke(freeStrokePath(points));
+      return drawing([stroke(freeStrokePath(points))]);
     case 'line':
-      return second ? stroke(linePath(first, end)) : null;
-    case 'arrow':
-      return second ? stroke(arrowPath(first, end, strokeWidth)) : null;
-    case 'rectangle':
-      return second ? stroke(rectanglePath(first, end)) : null;
-    case 'circle':
-      return second ? stroke(circlePath(first, end)) : null;
-    case 'text': {
-      if (!element.text) return null;
-      const box = textBox(element, size, scale);
-      return {
-        kind: 'text',
-        x: box.left,
-        // Línea base para que el texto quede centrado en vertical sobre el punto.
-        y: box.anchor.y + box.fontSize * 0.35,
-        fontSize: box.fontSize,
-        text: element.text,
-        color,
-        opacity: element.opacity,
-      };
+      return second ? drawing([stroke(linePath(first, end))]) : null;
+    case 'arrow': {
+      if (!second) return null;
+      const head = Math.max(ARROW_MIN_HEAD_PX, element.strokeWidth * 4) / scale;
+      return drawing([stroke(arrowPath(first, end, head))]);
     }
+    case 'rectangle':
+      return second ? drawing([stroke(rectanglePath(first, end))]) : null;
+    case 'circle':
+      return second ? drawing([stroke(circlePath(first, end))]) : null;
+    case 'dimension': {
+      const label = dimensionLabel(element);
+      if (!second || !label) return null;
+      const tick = (DRAWING_THRESHOLDS.dimensionTickPx + element.strokeWidth * 2) / scale;
+      return drawing([
+        stroke(dimensionPath(first, end, tick)),
+        textPart(label.anchor, label.text, label.fontSize),
+      ]);
+    }
+    case 'text':
+      if (!element.text) return null;
+      return drawing([textPart(first, element.text, element.fontSize ?? DEFAULT_FONT_SIZE_CM)]);
     case 'marker': {
-      const r = markerRadius(element.strokeWidth) * scale;
-      return {
-        kind: 'marker',
-        cx: first.x,
-        cy: first.y,
-        r,
-        borderWidth: Math.max(2, r * 0.25),
-        color,
-        opacity: element.opacity,
-      };
+      const r = markerRadius(element.strokeWidth);
+      return drawing([
+        { kind: 'marker', cx: first.x, cy: first.y, r, borderWidth: Math.max(2, r * 0.25) },
+      ]);
     }
   }
 }
 
-// ── Detección de toque (borrador) ────────────────────────────────────────────
+// ── Detección de toque (borrador y selección) ────────────────────────────────
 
 /** Distancia de un punto a un segmento. */
-export function distanceToSegment(point: PixelPoint, a: PixelPoint, b: PixelPoint): number {
+export function distanceToSegment(point: Point, a: Point, b: Point): number {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const lengthSquared = dx * dx + dy * dy;
@@ -318,7 +566,7 @@ export function distanceToSegment(point: PixelPoint, a: PixelPoint, b: PixelPoin
   return distance(point, { x: a.x + t * dx, y: a.y + t * dy });
 }
 
-function distanceToPolyline(point: PixelPoint, points: readonly PixelPoint[]): number {
+function distanceToPolyline(point: Point, points: readonly Point[]): number {
   const [first] = points;
   if (!first) return Number.POSITIVE_INFINITY;
   if (points.length === 1) return distance(point, first);
@@ -332,21 +580,22 @@ function distanceToPolyline(point: PixelPoint, points: readonly PixelPoint[]): n
 }
 
 /**
- * ¿El toque en `point` (píxeles) cae sobre el elemento? La tolerancia es
- * ~16 px más la mitad del grosor. Rectángulo y círculo solo por el borde.
+ * ¿El toque en `point` (centímetros) cae sobre el elemento? La tolerancia es
+ * ~16 px de pantalla más la mitad del grosor. Rectángulo y círculo, solo por
+ * el borde.
  */
 export function hitTestElement(
   element: AnnotationElement,
-  point: PixelPoint,
-  size: Size,
+  point: Point,
   scale: number,
-  tolerance: number = DRAWING_THRESHOLDS.hitTolerancePx,
+  tolerancePx: number = DRAWING_THRESHOLDS.hitTolerancePx,
 ): boolean {
-  const points = pixelPoints(element, size);
+  const { points } = element;
   const [first] = points;
   if (!first) return false;
   const end = points[points.length - 1] ?? first;
-  const reach = tolerance + (element.strokeWidth * scale) / 2;
+  const tolerance = tolerancePx / scale;
+  const reach = (tolerancePx + element.strokeWidth / 2) / scale;
 
   switch (element.type) {
     case 'freeStroke':
@@ -354,6 +603,13 @@ export function hitTestElement(
     case 'line':
     case 'arrow':
       return distanceToSegment(point, first, end) <= reach;
+    case 'dimension': {
+      if (distanceToSegment(point, first, end) <= reach) return true;
+      const label = dimensionLabel(element);
+      return label
+        ? containsPoint(textBox(label.anchor, label.text, label.fontSize), point, tolerance)
+        : false;
+    }
     case 'rectangle': {
       const corners = [
         { x: first.x, y: first.y },
@@ -369,29 +625,37 @@ export function hitTestElement(
       return Math.abs(distance(point, { x: cx, y: cy }) - r) <= reach;
     }
     case 'text': {
-      const box = textBox(element, size, scale);
-      return (
-        point.x >= box.left - tolerance &&
-        point.x <= box.right + tolerance &&
-        point.y >= box.top - tolerance &&
-        point.y <= box.bottom + tolerance
-      );
+      const box = textBox(first, element.text ?? '', element.fontSize ?? DEFAULT_FONT_SIZE_CM);
+      return containsPoint(box, point, tolerance);
     }
     case 'marker':
-      return distance(point, first) <= markerRadius(element.strokeWidth) * scale + tolerance;
+      return distance(point, first) <= (markerRadius(element.strokeWidth) + tolerancePx) / scale;
   }
 }
 
 /** Id del elemento más alto (el último dibujado) bajo el toque, o `null`. */
 export function findElementAt(
   elements: readonly AnnotationElement[],
-  point: PixelPoint,
-  size: Size,
+  point: Point,
   scale: number,
 ): string | null {
   for (let index = elements.length - 1; index >= 0; index -= 1) {
     const element = elements[index];
-    if (element && hitTestElement(element, point, size, scale)) return element.id;
+    if (element && hitTestElement(element, point, scale)) return element.id;
   }
   return null;
+}
+
+/** Ids de los elementos que quedan enteros dentro del rectángulo. */
+export function elementsInside(
+  elements: readonly AnnotationElement[],
+  area: Bounds,
+  scale: number,
+): string[] {
+  return elements
+    .filter((element) => {
+      const bounds = elementBounds(element, scale);
+      return bounds !== null && containsBounds(area, bounds);
+    })
+    .map((element) => element.id);
 }

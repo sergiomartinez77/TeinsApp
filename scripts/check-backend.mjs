@@ -12,7 +12,7 @@
  *   1. Que las variables existen y tienen formato válido.
  *   2. Que los nombres de dominio resuelven (DNS).
  *   3. La salud de Supabase Auth.
- *   4. Que las 9 tablas existen vía la API REST (200, o 401/403 por RLS/permisos,
+ *   4. Que las tablas sincronizadas existen vía la API REST (200, o 401/403 por RLS/permisos,
  *      es lo esperable; 404 o "tabla no encontrada" significa que faltan migraciones).
  *   5. El bucket visit-photos (si la clave pública puede consultarlo).
  *   6. Que PowerSync responde.
@@ -32,6 +32,9 @@ const TABLES = [
   'visit_materials',
   'photos',
   'annotations',
+  'annotation_figures',
+  'material_stock',
+  'material_stock_movements',
 ];
 const BUCKET = 'visit-photos';
 const TIMEOUT_MS = 10_000;

@@ -110,16 +110,22 @@ describe('photosStatusText', () => {
 });
 
 describe('annotationsStatusText', () => {
-  it('sin anotaciones', () => {
-    expect(annotationsStatusText(0)).toBe('Sin anotaciones');
+  it('sin planos', () => {
+    expect(annotationsStatusText(0, 0)).toBe(SUMMARY_MESSAGES.noAnnotations);
+    expect(annotationsStatusText(0, 5)).toBe('Sin planos');
   });
 
-  it('un elemento', () => {
-    expect(annotationsStatusText(1)).toBe('1 elemento');
+  it('un plano vacío o con un elemento', () => {
+    expect(annotationsStatusText(1, 0)).toBe('1 plano · 0 elementos');
+    expect(annotationsStatusText(1, 1)).toBe('1 plano · 1 elemento');
   });
 
-  it('varios elementos', () => {
-    expect(annotationsStatusText(7)).toBe('7 elementos');
+  it('varios planos suman sus elementos', () => {
+    expect(annotationsStatusText(3, 7)).toBe('3 planos · 7 elementos');
+  });
+
+  it('un recuento negativo de elementos cuenta como cero', () => {
+    expect(annotationsStatusText(2, -4)).toBe('2 planos · 0 elementos');
   });
 });
 

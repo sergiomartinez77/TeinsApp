@@ -34,7 +34,14 @@ export interface SyncMonitorSource {
 }
 
 /** Tablas cuyas escrituras generan cambios por subir. */
-const WATCHED_TABLES = ['visits', 'form_responses', 'visit_materials', 'photos', 'annotations'];
+const WATCHED_TABLES = [
+  'visits',
+  'form_responses',
+  'visit_materials',
+  'photos',
+  'annotations',
+  'annotation_figures',
+];
 
 /** Texto legible de un error de PowerSync (puede llegar como objeto plano). */
 function describeFailure(failure: unknown): string | null {

@@ -16,6 +16,16 @@ export function canViewAllVisits(role: UserRole): boolean {
   return role === 'office' || role === 'admin';
 }
 
+/** Registrar compras y ajustes de bodega (RLS: admin u oficina). */
+export function canManageInventory(role: UserRole): boolean {
+  return role === 'office' || role === 'admin';
+}
+
+/** Cambiar el mínimo de bodega de un material (RLS del catálogo: solo admin). */
+export function canEditMinStock(role: UserRole): boolean {
+  return role === 'admin';
+}
+
 /** Perfil del usuario autenticado. */
 export interface UserProfile {
   /** UUID de Supabase Auth. */

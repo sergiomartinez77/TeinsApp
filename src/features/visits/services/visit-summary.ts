@@ -2,7 +2,7 @@
  * Textos de estado de cada sección en el resumen de la visita.
  * Funciones puras: reciben los datos ya cargados y devuelven el texto a mostrar.
  */
-import { elementCountLabel } from '@/models/annotation.model';
+import { elementCountLabel, planCountLabel } from '@/models/annotation.model';
 import type { MaterialsSummary } from '@/models/material.model';
 import { photoCountLabel } from '@/models/photo.model';
 
@@ -24,7 +24,7 @@ export const SUMMARY_MESSAGES = {
   formCompleted: 'Completado',
   noMaterials: 'Sin materiales',
   noPhotos: 'Sin fotografías',
-  noAnnotations: 'Sin anotaciones',
+  noAnnotations: 'Sin planos',
 } as const;
 
 const SEPARATOR = ' · ';
@@ -74,8 +74,8 @@ export function photosStatusText(total: number, pending: number): string {
   return pending > 0 ? `${label}${SEPARATOR}${pending} por subir` : label;
 }
 
-/** Anotaciones: "Sin anotaciones", "1 elemento" o "N elementos". */
-export function annotationsStatusText(elementCount: number): string {
-  if (elementCount <= 0) return SUMMARY_MESSAGES.noAnnotations;
-  return elementCountLabel(elementCount);
+/** Planos: "Sin planos" o "N planos · M elementos". */
+export function annotationsStatusText(planCount: number, elementCount: number): string {
+  if (planCount <= 0) return SUMMARY_MESSAGES.noAnnotations;
+  return `${planCountLabel(planCount)}${SEPARATOR}${elementCountLabel(Math.max(0, elementCount))}`;
 }

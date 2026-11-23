@@ -12,10 +12,15 @@ const renderToolbar = async (overrides: Partial<AnnotationToolbarProps> = {}) =>
     color: ANNOTATION_DEFAULTS.color,
     sizeId: ANNOTATION_DEFAULTS.size,
     canUndo: false,
+    canRedo: false,
+    snap: true,
     onToolChange: jest.fn(),
     onColorChange: jest.fn(),
     onSizeChange: jest.fn(),
     onUndo: jest.fn(),
+    onRedo: jest.fn(),
+    onSnapChange: jest.fn(),
+    onOpenFigures: jest.fn(),
     ...overrides,
   };
   await render(<AnnotationToolbar {...props} />);
@@ -27,11 +32,14 @@ describe('AnnotationToolbar', () => {
     await renderToolbar();
 
     for (const label of [
+      'Seleccionar',
+      'Mover vista',
       'Lápiz',
       'Línea',
       'Flecha',
       'Rectángulo',
       'Círculo',
+      'Cota',
       'Texto',
       'Marcador',
       'Borrador',
@@ -45,16 +53,20 @@ describe('AnnotationToolbar', () => {
       'Grosor medio',
       'Grosor grueso',
       'Deshacer',
+      'Rehacer',
+      'Ajustar a la cuadrícula',
+      'Figuras guardadas',
     ]) {
       expect(screen.getByRole('button', { name: label })).toBeOnTheScreen();
     }
   });
 
-  it('marca como seleccionados el lápiz, el azul y el grosor medio por defecto', async () => {
+  it('marca como seleccionados la línea, el azul, el grosor medio y el ajuste por defecto', async () => {
     await renderToolbar();
 
-    expect(screen.getByRole('button', { name: 'Lápiz' })).toBeSelected();
-    expect(screen.getByRole('button', { name: 'Línea' })).not.toBeSelected();
+    expect(screen.getByRole('button', { name: 'Línea' })).toBeSelected();
+    expect(screen.getByRole('button', { name: 'Lápiz' })).not.toBeSelected();
+    expect(screen.getByRole('button', { name: 'Ajustar a la cuadrícula' })).toBeSelected();
     expect(screen.getByRole('button', { name: 'Color azul' })).toBeSelected();
     expect(screen.getByRole('button', { name: 'Color rojo' })).not.toBeSelected();
     expect(screen.getByRole('button', { name: 'Grosor medio' })).toBeSelected();
@@ -98,11 +110,36 @@ describe('AnnotationToolbar', () => {
     expect(props.onUndo).toHaveBeenCalledTimes(1);
   });
 
+  it('rehacer solo funciona si hay algo que rehacer', async () => {
+    const disabled = await renderToolbar({ canRedo: false });
+    const redo = screen.getByRole('button', { name: 'Rehacer' });
+    expect(redo).toBeDisabled();
+    await fireEvent.press(redo);
+    expect(disabled.onRedo).not.toHaveBeenCalled();
+  });
+
+  it('rehacer está habilitado si hay algo deshecho', async () => {
+    const enabled = await renderToolbar({ canRedo: true });
+    await fireEvent.press(screen.getByRole('button', { name: 'Rehacer' }));
+    expect(enabled.onRedo).toHaveBeenCalledTimes(1);
+  });
+
+  it('el ajuste se activa y desactiva, y las figuras se abren', async () => {
+    const props = await renderToolbar({ snap: true });
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Ajustar a la cuadrícula' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Figuras guardadas' }));
+
+    expect(props.onSnapChange).toHaveBeenCalledWith(false);
+    expect(props.onOpenFigures).toHaveBeenCalledTimes(1);
+  });
+
   it('también funciona en columna lateral', async () => {
-    await renderToolbar({ layout: 'side' });
+    await renderToolbar({ layout: 'side', tool: 'freeStroke' });
 
     expect(screen.getByRole('button', { name: 'Lápiz' })).toBeSelected();
     expect(screen.getByRole('button', { name: 'Deshacer' })).toBeOnTheScreen();
+    expect(screen.getByRole('button', { name: 'Figuras guardadas' })).toBeOnTheScreen();
   });
 });
 

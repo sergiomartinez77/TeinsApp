@@ -20,8 +20,19 @@
 #   NUMERIC como texto (por eso quantity se convierte a real).
 # • visit_materials enumera sus columnas (por el CAST de quantity): una columna
 #   nueva del servidor hay que añadirla aquí (p. ej. is_custom, migración
-#   20261118000200). form_responses y photos usan SELECT *: sus columnas nuevas
-#   (template_key, latitude, longitude, location_accuracy, taken_at) llegan solas.
+#   20261118000200). form_responses, photos y annotations usan SELECT *: sus
+#   columnas nuevas (template_key, latitude, longitude, location_accuracy,
+#   taken_at, format_version de la migración 20261122000100) llegan solas.
+# • annotation_figures (migración 20261122000100): biblioteca de figuras de cada
+#   técnico; no depende de ninguna visita (stream mis_figuras).
+# • Inventario (migración 20261122000200), en el stream catalogos (bodega única,
+#   igual para todos):
+#     - material_catalog enumera sus columnas por el CAST de min_stock
+#       (NUMERIC): una columna nueva del catálogo hay que añadirla aquí.
+#     - material_stock no tiene columna id (su clave es material_id): se
+#       entrega como `material_id AS id`. Sus cantidades son NUMERIC → real.
+#       Solo la escriben triggers del servidor; la app nunca la sube.
+#     - material_stock_movements: compras y ajustes (todos). quantity → real.
 # ═══════════════════════════════════════════════════════════════════════════
 
 config:
@@ -53,10 +64,27 @@ streams:
       - SELECT * FROM photos WHERE visit_id IN visitas_del_tecnico
       - SELECT * FROM annotations WHERE visit_id IN visitas_del_tecnico
 
-  # Catálogos activos (iguales para todos los usuarios).
+  # Figuras guardadas por el técnico para reutilizarlas en otros planos.
+  mis_figuras:
+    auto_subscribe: true
+    query: SELECT * FROM annotation_figures WHERE technician_id = auth.user_id()
+
+  # Catálogos activos e inventario de la bodega (iguales para todos los usuarios).
   catalogos:
     auto_subscribe: true
     queries:
       - SELECT * FROM visit_types WHERE is_active = true
       - SELECT * FROM form_templates WHERE is_active = true
-      - SELECT * FROM material_catalog WHERE is_active = true
+      - |
+        SELECT id, code, name, description, unit, category, is_active,
+               CAST(min_stock AS real) AS min_stock, created_at, updated_at
+        FROM material_catalog WHERE is_active = true
+      - |
+        SELECT material_id AS id, material_id,
+               CAST(purchased AS real) AS purchased, CAST(adjusted AS real) AS adjusted,
+               CAST(used AS real) AS used, CAST(on_hand AS real) AS on_hand, updated_at
+        FROM material_stock
+      - |
+        SELECT id, material_id, kind, CAST(quantity AS real) AS quantity, note, created_by,
+               sync_status, created_at, updated_at
+        FROM material_stock_movements

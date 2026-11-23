@@ -1,5 +1,7 @@
 import {
   canCreateVisit,
+  canEditMinStock,
+  canManageInventory,
   canViewAllVisits,
   DEMO_USER,
   displayName,
@@ -34,6 +36,16 @@ describe('modelo de usuario', () => {
     expect(canCreateVisit('office')).toBe(false);
     expect(canViewAllVisits('office')).toBe(true);
     expect(canViewAllVisits('technician')).toBe(false);
+  });
+
+  it('inventario: admin y oficina registran movimientos; solo admin cambia el mínimo', () => {
+    expect(canManageInventory('admin')).toBe(true);
+    expect(canManageInventory('office')).toBe(true);
+    expect(canManageInventory('technician')).toBe(false);
+    expect(canManageInventory('client')).toBe(false);
+    expect(canEditMinStock('admin')).toBe(true);
+    expect(canEditMinStock('office')).toBe(false);
+    expect(canEditMinStock('technician')).toBe(false);
   });
 
   it('construye el perfil desde una fila de profiles', () => {

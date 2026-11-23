@@ -67,6 +67,25 @@ describe('toRemoteRow', () => {
     expect(toRemoteRow('visits', { sync_status: 'conflict' }).sync_status).toBe('conflict');
   });
 
+  it('adapta las figuras guardadas: JSON a objeto y sync_status a synced', () => {
+    const figure = toRemoteRow('annotation_figures', {
+      technician_id: 't1',
+      name: 'Rack 42U',
+      elements: '[{"id":"e1","type":"rect"}]',
+      width: 60,
+      height: 200,
+      sync_status: 'local',
+    });
+    expect(figure).toEqual({
+      technician_id: 't1',
+      name: 'Rack 42U',
+      elements: [{ id: 'e1', type: 'rect' }],
+      width: 60,
+      height: 200,
+      sync_status: 'synced',
+    });
+  });
+
   it('no toca el estado de subida propio de las fotos', () => {
     expect(toRemoteRow('photos', { sync_status: 'local' }).sync_status).toBe('local');
   });
@@ -92,6 +111,35 @@ describe('isFatalRemoteError', () => {
 
 describe('uploadNextTransaction', () => {
   const noIssues = async () => undefined;
+
+  it('sube y borra planos y figuras guardadas', async () => {
+    const { remote, calls } = createRemote();
+    const { source, complete } = createSource([
+      entry(UpdateType.PUT, 'annotation_figures', 'f1', {
+        name: 'Rack',
+        elements: '[]',
+        sync_status: 'local',
+      }),
+      entry(UpdateType.PATCH, 'annotation_figures', 'f1', { name: 'Rack 42U' }),
+      entry(UpdateType.DELETE, 'annotation_figures', 'f1'),
+      entry(UpdateType.DELETE, 'annotations', 'a1'),
+    ]);
+
+    const outcome = await uploadNextTransaction(source, remote, noIssues);
+
+    expect(outcome).toEqual({ uploaded: 4, issues: [] });
+    expect(calls).toEqual([
+      {
+        kind: 'upsert',
+        table: 'annotation_figures',
+        row: { id: 'f1', name: 'Rack', elements: [], sync_status: 'synced' },
+      },
+      { kind: 'update', table: 'annotation_figures', id: 'f1', changes: { name: 'Rack 42U' } },
+      { kind: 'remove', table: 'annotation_figures', id: 'f1' },
+      { kind: 'remove', table: 'annotations', id: 'a1' },
+    ]);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
 
   it('no hace nada si no hay cambios pendientes', async () => {
     const { remote, calls } = createRemote();
@@ -183,6 +231,71 @@ describe('uploadNextTransaction', () => {
     expect(calls).toHaveLength(0);
     expect(recorded[0]?.code).toBe('READ_ONLY_TABLE');
     expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('sube los movimientos de bodega y el mínimo del catálogo; nunca material_stock', async () => {
+    const { remote, calls } = createRemote();
+    const { source, complete } = createSource([
+      entry(UpdateType.PUT, 'material_stock_movements', 'mv1', {
+        material_id: 'm1',
+        kind: 'purchase',
+        quantity: 10,
+        sync_status: 'pendingSync',
+      }),
+      entry(UpdateType.PATCH, 'material_catalog', 'm1', { min_stock: 5 }),
+      entry(UpdateType.PATCH, 'material_catalog', 'm1', { name: 'Otro nombre' }),
+      entry(UpdateType.PATCH, 'material_catalog', 'm1', {}),
+      entry(UpdateType.DELETE, 'material_catalog', 'm1'),
+      entry(UpdateType.PUT, 'material_stock', 'm1', { on_hand: 999 }),
+    ]);
+    const recorded: SyncIssue[] = [];
+
+    const outcome = await uploadNextTransaction(source, remote, async (issue) => {
+      recorded.push(issue);
+    });
+
+    expect(outcome?.uploaded).toBe(2);
+    expect(calls).toEqual([
+      {
+        kind: 'upsert',
+        table: 'material_stock_movements',
+        row: {
+          id: 'mv1',
+          material_id: 'm1',
+          kind: 'purchase',
+          quantity: 10,
+          sync_status: 'synced',
+        },
+      },
+      { kind: 'update', table: 'material_catalog', id: 'm1', changes: { min_stock: 5 } },
+    ]);
+    expect(recorded.map((issue) => [issue.table, issue.operation, issue.code])).toEqual([
+      ['material_catalog', UpdateType.PATCH, 'READ_ONLY_TABLE'],
+      ['material_catalog', UpdateType.PATCH, 'READ_ONLY_TABLE'],
+      ['material_catalog', UpdateType.DELETE, 'READ_ONLY_TABLE'],
+      ['material_stock', UpdateType.PUT, 'READ_ONLY_TABLE'],
+    ]);
+    expect(complete).toHaveBeenCalledTimes(1);
+  });
+
+  it('un movimiento rechazado por la RLS (técnico) queda registrado', async () => {
+    const { remote } = createRemote(() => ({
+      error: { code: '42501', message: 'new row violates row-level security policy' },
+    }));
+    const { source } = createSource([
+      entry(UpdateType.PUT, 'material_stock_movements', 'mv1', { kind: 'purchase' }),
+    ]);
+    const recorded: SyncIssue[] = [];
+
+    await uploadNextTransaction(source, remote, async (issue) => {
+      recorded.push(issue);
+    });
+
+    expect(recorded[0]).toMatchObject({ table: 'material_stock_movements', code: '42501' });
+  });
+
+  it('convierte is_active del catálogo a booleano', () => {
+    expect(toRemoteRow('material_catalog', { is_active: 1 }).is_active).toBe(true);
   });
 
   it('si no puede guardar la incidencia, no confirma la transacción', async () => {

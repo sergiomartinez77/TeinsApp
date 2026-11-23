@@ -118,7 +118,7 @@ describe('SectionGrid', () => {
       'Formulario técnico',
       'Materiales',
       'Fotografías',
-      'Anotaciones',
+      'Planos',
       'Resumen',
     ]);
     await fireEvent.press(screen.getByRole('button', { name: 'Materiales' }));

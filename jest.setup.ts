@@ -57,3 +57,24 @@ jest.mock('@shopify/react-native-skia', () => {
   );
   return Mock(canvasKit);
 });
+
+// ── Informe PDF ──────────────────────────────────────────────────────────────
+// expo-print y expo-sharing son módulos nativos. El PDF "impreso" es un archivo
+// del sistema de archivos en memoria de jest-expo con el HTML recibido, para
+// poder moverlo y revisarlo en los tests.
+
+jest.mock('expo-print', () => ({
+  printToFileAsync: jest.fn(async (options: { html?: string } = {}) => {
+    const { File, Paths } =
+      jest.requireActual<typeof import('expo-file-system')>('expo-file-system');
+    const file = new File(Paths.cache, `Print-${Date.now()}.pdf`);
+    file.write(options.html ?? '');
+    return { uri: file.uri, numberOfPages: 1 };
+  }),
+  printAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock('expo-sharing', () => ({
+  isAvailableAsync: jest.fn(async () => true),
+  shareAsync: jest.fn(async () => undefined),
+}));

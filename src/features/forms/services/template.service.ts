@@ -6,6 +6,9 @@ import {
   type FormTemplate,
 } from '@/models/form.model';
 
+/** Todas las plantillas sincronizadas en la base local (activas o no). */
+export const TEMPLATES_SQL = 'SELECT * FROM form_templates';
+
 /**
  * Plantillas de respaldo incluidas en la app. Solo viven en memoria: nunca se
  * insertan en `form_templates` (el técnico no puede escribir esa tabla y la

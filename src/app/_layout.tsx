@@ -7,6 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AppErrorScreen } from '@/components/layout/AppErrorScreen';
+import { clearAssistantOnSessionChange } from '@/features/assistant/assistant.store';
 import { useSessionBootstrap } from '@/features/auth/hooks/useSessionBootstrap';
 import { clearQueryCacheOnSessionChange } from '@/features/auth/session-query-cache';
 import { colors } from '@/theme';
@@ -26,6 +27,8 @@ export default function RootLayout() {
   useSessionBootstrap();
   // Al cerrar sesión o cambiar de usuario o de modo se vacía la caché de consultas.
   useEffect(() => clearQueryCacheOnSessionChange(queryClient), [queryClient]);
+  // La conversación del asistente tampoco pasa de una sesión a otra.
+  useEffect(() => clearAssistantOnSessionChange(), []);
 
   return (
     <GestureHandlerRootView style={styles.root}>

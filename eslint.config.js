@@ -16,4 +16,13 @@ module.exports = defineConfig([
       'no-console': 'error',
     },
   },
+  {
+    // Funciones Edge (Deno): importan paquetes con especificadores `npm:` y
+    // registran con console (va a los logs de la función en Supabase).
+    files: ['supabase/functions/*/index.ts'],
+    rules: {
+      'import/no-unresolved': ['error', { ignore: ['^npm:', '^jsr:'] }],
+      'no-console': 'off',
+    },
+  },
 ]);

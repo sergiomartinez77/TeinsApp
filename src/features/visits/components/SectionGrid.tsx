@@ -17,7 +17,7 @@ export const VISIT_SECTIONS: readonly VisitSectionInfo[] = [
   { key: 'form-select', label: 'Formulario técnico', icon: 'assignment', color: colors.primary },
   { key: 'materials', label: 'Materiales', icon: 'inventory-2', color: colors.secondaryDark },
   { key: 'photos', label: 'Fotografías', icon: 'photo-camera', color: colors.warning },
-  { key: 'annotations', label: 'Anotaciones', icon: 'draw', color: colors.info },
+  { key: 'annotations', label: 'Planos', icon: 'draw', color: colors.info },
   { key: 'summary', label: 'Resumen', icon: 'summarize', color: colors.grey600 },
 ];
 

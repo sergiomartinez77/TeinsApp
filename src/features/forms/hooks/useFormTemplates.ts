@@ -1,9 +1,11 @@
 import { useQuery } from '@powersync/react';
 import { useMemo } from 'react';
 
-import { buildTemplateCatalog, type TemplateCatalog } from '../services/template.service';
-
-const TEMPLATES_SQL = 'SELECT * FROM form_templates';
+import {
+  buildTemplateCatalog,
+  TEMPLATES_SQL,
+  type TemplateCatalog,
+} from '../services/template.service';
 
 export interface FormTemplatesResult {
   catalog: TemplateCatalog;

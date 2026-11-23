@@ -9,7 +9,11 @@ module.exports = {
     // El paquete nativo reexporta @powersync/common; en tests se usa la parte pura.
     '^@powersync/react-native$': '@powersync/common',
   },
-  testMatch: ['<rootDir>/src/**/__tests__/**/*.test.[jt]s?(x)'],
+  testMatch: [
+    '<rootDir>/src/**/__tests__/**/*.test.[jt]s?(x)',
+    // Lógica pura de las funciones Edge (Deno); index.ts no se prueba aquí.
+    '<rootDir>/supabase/functions/**/__tests__/**/*.test.ts',
+  ],
   // Con la instrumentación de cobertura, el primer test de los archivos que
   // montan componentes tarda más de los 5 s por defecto (carga en frío de
   // React Native y transformación de módulos). 20 s deja margen sin ocultar cuelgues.
@@ -21,6 +25,10 @@ module.exports = {
     '!src/test-utils/**',
     '!src/**/*.d.ts',
     '!src/app/**',
+    'supabase/functions/**/*.ts',
+    '!supabase/functions/**/__tests__/**',
+    // Solo conecta Deno.serve con los clientes reales (sin lógica propia).
+    '!supabase/functions/*/index.ts',
   ],
   // Umbrales mínimos. Con un patrón (glob), Jest aplica el umbral a CADA archivo
   // que coincide: la lógica crítica no puede quedarse atrás ni en un solo archivo.
@@ -29,5 +37,6 @@ module.exports = {
     './src/**/services/**': { lines: 90 },
     './src/store/**': { lines: 90 },
     './src/models/**': { lines: 90 },
+    './supabase/functions/**': { lines: 90 },
   },
 };

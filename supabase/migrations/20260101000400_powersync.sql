@@ -7,7 +7,10 @@
 --
 -- • Supabase ya trae wal_level = logical: no hay que cambiar nada.
 -- • Publicación `powersync` (el nombre es obligatorio) con SOLO las 9 tablas
---   que sincroniza la app (no audit_logs). Si ya existe, se fija su lista.
+--   que sincroniza la app (no audit_logs). Si ya existe, se fija su lista
+--   (incluidas las tablas de migraciones posteriores que ya existan, p. ej.
+--   annotation_figures; ver 20261122000100_planos_y_figuras.sql, y
+--   material_stock / material_stock_movements; ver 20261122000200_inventario.sql).
 -- • Rol dedicado `powersync_role` con REPLICATION, BYPASSRLS y LOGIN, y solo
 --   SELECT sobre esas 9 tablas. El original usaba el usuario `postgres`.
 --
@@ -36,16 +39,21 @@ BEGIN
             public.photos,
             public.annotations;
     ELSE
-        ALTER PUBLICATION powersync SET TABLE
-            public.profiles,
-            public.visit_types,
-            public.form_templates,
-            public.visits,
-            public.form_responses,
-            public.material_catalog,
-            public.visit_materials,
-            public.photos,
-            public.annotations;
+        -- SET TABLE fija la lista y quitaría las tablas añadidas por migraciones
+        -- posteriores al re-aplicar esta: las que ya existen se incluyen aquí.
+        --   • annotation_figures (migración 20261122000100_planos_y_figuras).
+        --   • material_stock y material_stock_movements (migración
+        --     20261122000200_inventario).
+        EXECUTE 'ALTER PUBLICATION powersync SET TABLE '
+            || 'public.profiles, public.visit_types, public.form_templates, '
+            || 'public.visits, public.form_responses, public.material_catalog, '
+            || 'public.visit_materials, public.photos, public.annotations'
+            || CASE WHEN to_regclass('public.annotation_figures') IS NOT NULL
+                    THEN ', public.annotation_figures' ELSE '' END
+            || CASE WHEN to_regclass('public.material_stock') IS NOT NULL
+                    THEN ', public.material_stock' ELSE '' END
+            || CASE WHEN to_regclass('public.material_stock_movements') IS NOT NULL
+                    THEN ', public.material_stock_movements' ELSE '' END;
     END IF;
 END
 $$;

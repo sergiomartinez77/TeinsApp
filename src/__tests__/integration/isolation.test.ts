@@ -1,4 +1,11 @@
-import { saveAnnotation } from '@/features/annotations/services/annotation.service';
+import { FIGURES_BY_TECHNICIAN_SQL } from '@/features/annotations/services/annotation.queries';
+import {
+  createAnnotation,
+  deleteAnnotation,
+  renameAnnotation,
+  saveAnnotation,
+} from '@/features/annotations/services/annotation.service';
+import { deleteFigure } from '@/features/annotations/services/figure.service';
 import { completeFormResponse, saveFormResponse } from '@/features/forms/services/response.service';
 import {
   addMaterialToVisit,
@@ -24,6 +31,7 @@ import { completeVisit, createVisit, startVisit } from '@/features/visits/servic
 import {
   annotationRow,
   catalogRow,
+  figureRow,
   photoRow,
   responseRow,
   TECH_A,
@@ -47,7 +55,14 @@ jest.mock('@/utils/logger', () => {
 });
 
 const NOW = new Date('2026-06-10T12:00:00.000Z');
-const TABLES = ['visits', 'form_responses', 'visit_materials', 'photos', 'annotations'];
+const TABLES = [
+  'visits',
+  'form_responses',
+  'visit_materials',
+  'photos',
+  'annotations',
+  'annotation_figures',
+];
 
 let db: TestDatabase;
 
@@ -90,6 +105,9 @@ function seedTechnician(technicianId: string, prefix: string) {
     }),
   ]);
   db.insert('annotations', [annotationRow({ id: `${prefix}-an`, visit_id: `${prefix}-progreso` })]);
+  db.insert('annotation_figures', [
+    figureRow({ id: `${prefix}-fig`, technician_id: technicianId }),
+  ]);
   db.insert('form_responses', [responseRow({ id: `${prefix}-r`, visit_id: `${prefix}-progreso` })]);
 }
 
@@ -151,6 +169,13 @@ describe('consultas por técnico', () => {
   });
 });
 
+describe('biblioteca de figuras', () => {
+  it('cada técnico solo ve sus figuras', async () => {
+    const rows = await db.getAll<Row>(FIGURES_BY_TECHNICIAN_SQL, [TECH_A]);
+    expect(rows.map((row) => row.id)).toEqual(['a-fig']);
+  });
+});
+
 describe('servicios de escritura', () => {
   it('ningún servicio del técnico A modifica datos del técnico B', async () => {
     const before = rowsOf('b');
@@ -179,13 +204,13 @@ describe('servicios de escritura', () => {
       await removeVisitMaterial(db, TECH_A, { visitId, visitMaterialId: 'b-vm' }),
       await addPhoto(db, files, TECH_A, { visitId, image }, NOW),
       await deletePhoto(db, files, TECH_A, { visitId, photoId: 'b-foto' }, NOW),
-      await saveAnnotation(
-        db,
-        TECH_A,
-        { visitId, elements: [], canvasWidth: 1, canvasHeight: 1 },
-        NOW,
-      ),
+      await createAnnotation(db, TECH_A, { visitId, title: 'Intruso' }, NOW),
+      await saveAnnotation(db, TECH_A, { visitId, annotationId: 'b-an', elements: [] }, NOW),
+      await renameAnnotation(db, TECH_A, { visitId, annotationId: 'b-an', title: 'X' }, NOW),
+      await deleteAnnotation(db, TECH_A, { visitId, annotationId: 'b-an' }),
     ];
+    // Borrar una figura ajena no falla, pero no toca nada: solo se borran las propias.
+    expect((await deleteFigure(db, TECH_A, 'b-fig')).ok).toBe(true);
 
     for (const result of results) {
       expect(result).toMatchObject({ ok: false, error: { code: 'not_found' } });

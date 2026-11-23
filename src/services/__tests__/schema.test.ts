@@ -2,7 +2,7 @@ import { appSchema } from '../powersync/schema';
 
 const COMMON = ['created_at', 'updated_at'];
 
-/** Columnas de cada tabla en PostgreSQL (migración 001 y las 20261118*), sin `id`. */
+/** Columnas de cada tabla en PostgreSQL (migración 001, las 20261118* y 20261122*), sin `id`. */
 const SERVER_COLUMNS: Record<string, string[]> = {
   profiles: ['email', 'full_name', 'role', 'phone', 'avatar_url', 'is_active', ...COMMON],
   visit_types: ['name', 'description', 'icon', 'is_active', ...COMMON],
@@ -37,7 +37,16 @@ const SERVER_COLUMNS: Record<string, string[]> = {
     'completed_at',
     ...COMMON,
   ],
-  material_catalog: ['code', 'name', 'description', 'unit', 'category', 'is_active', ...COMMON],
+  material_catalog: [
+    'code',
+    'name',
+    'description',
+    'unit',
+    'category',
+    'is_active',
+    'min_stock',
+    ...COMMON,
+  ],
   visit_materials: [
     'visit_id',
     'material_id',
@@ -75,6 +84,28 @@ const SERVER_COLUMNS: Record<string, string[]> = {
     'base_image_path',
     'canvas_width',
     'canvas_height',
+    'format_version',
+    'sync_status',
+    ...COMMON,
+  ],
+  annotation_figures: [
+    'technician_id',
+    'name',
+    'elements',
+    'width',
+    'height',
+    'sync_status',
+    ...COMMON,
+  ],
+  // material_stock no tiene `id` en el servidor: la clave es material_id
+  // (el stream lo entrega como `material_id AS id`) y no tiene created_at.
+  material_stock: ['material_id', 'purchased', 'adjusted', 'used', 'on_hand', 'updated_at'],
+  material_stock_movements: [
+    'material_id',
+    'kind',
+    'quantity',
+    'note',
+    'created_by',
     'sync_status',
     ...COMMON,
   ],
@@ -88,7 +119,7 @@ describe('esquema local de PowerSync', () => {
     expect(() => appSchema.validate()).not.toThrow();
   });
 
-  it('incluye las 9 tablas sincronizadas y la tabla local de incidencias', () => {
+  it('incluye las 12 tablas sincronizadas y la tabla local de incidencias', () => {
     expect([...tables.keys()].sort()).toEqual(
       [...Object.keys(SERVER_COLUMNS), 'sync_issues'].sort(),
     );
@@ -110,6 +141,7 @@ describe('esquema local de PowerSync', () => {
     expect(columnNames('form_responses')).not.toContain('responses_json');
     expect(columnNames('annotations')).toContain('elements');
     expect(columnNames('annotations')).not.toContain('elements_json');
+    expect(columnNames('annotation_figures')).toContain('elements');
   });
 
   it('solo sync_issues es local; el resto se sincroniza', () => {
@@ -152,5 +184,46 @@ describe('columnas nuevas (migraciones 20261118*)', () => {
 
   it('la consulta de visit_materials de PowerSync incluye is_custom', () => {
     expect(syncConfig).toMatch(/SELECT id, visit_id, material_id, is_custom,/);
+  });
+});
+
+describe('inventario (migración 20261122000200)', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const fs: typeof import('node:fs') = require('node:fs');
+  const path: typeof import('node:path') = require('node:path');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const root = path.resolve(__dirname, '..', '..', '..');
+  const migration = fs.readFileSync(
+    path.join(root, 'supabase', 'migrations', '20261122000200_inventario.sql'),
+    'utf8',
+  );
+  const syncConfig = fs.readFileSync(path.join(root, 'powersync', 'sync-config.yaml'), 'utf8');
+  const localColumns = (table: string) =>
+    appSchema.tables.find((t) => t.name === table)?.columns.map((c) => c.name) ?? [];
+
+  it('min_stock existe en el servidor y en el esquema local, y llega como real', () => {
+    expect(migration).toContain('ADD COLUMN IF NOT EXISTS min_stock NUMERIC(12, 3)');
+    expect(localColumns('material_catalog')).toContain('min_stock');
+    expect(syncConfig).toContain('CAST(min_stock AS real) AS min_stock');
+  });
+
+  it('material_stock llega con id = material_id y las cantidades como real', () => {
+    expect(syncConfig).toMatch(/SELECT material_id AS id, material_id,/);
+    for (const column of ['purchased', 'adjusted', 'used', 'on_hand']) {
+      expect(syncConfig).toContain(`CAST(${column} AS real) AS ${column}`);
+    }
+  });
+
+  it('la consulta de cada tabla nueva enumera todas las columnas locales', () => {
+    const query = (table: string) => {
+      const at = syncConfig.indexOf(`FROM ${table}`);
+      return syncConfig.slice(syncConfig.lastIndexOf('SELECT', at), at);
+    };
+    for (const table of ['material_catalog', 'material_stock', 'material_stock_movements']) {
+      const select = query(table);
+      for (const column of localColumns(table)) {
+        expect(select).toMatch(new RegExp(`\\b${column}\\b`));
+      }
+    }
   });
 });

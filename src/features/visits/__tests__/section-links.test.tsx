@@ -14,7 +14,7 @@ describe('SectionLinks', () => {
   it('muestra las cuatro secciones con su estado', async () => {
     await render(<SectionLinks statuses={STATUSES} onOpen={jest.fn()} />);
 
-    for (const label of ['Formulario técnico', 'Materiales', 'Fotografías', 'Anotaciones']) {
+    for (const label of ['Formulario técnico', 'Materiales', 'Fotografías', 'Planos']) {
       expect(screen.getByText(label)).toBeOnTheScreen();
     }
     for (const status of Object.values(STATUSES)) {

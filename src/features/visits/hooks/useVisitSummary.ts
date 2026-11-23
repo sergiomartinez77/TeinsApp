@@ -1,6 +1,6 @@
 import { useQuery } from '@powersync/react';
 
-import { useVisitAnnotation } from '@/features/annotations/hooks/useVisitAnnotation';
+import { useVisitAnnotations } from '@/features/annotations/hooks/useVisitAnnotations';
 import { useVisitFormResponses } from '@/features/forms/hooks/useVisitForms';
 import { useVisitMaterials } from '@/features/materials/hooks/useVisitMaterials';
 import { VISIT_PHOTO_STATS_SQL } from '@/features/photos/services/photo.queries';
@@ -28,7 +28,7 @@ const toCount = (value: unknown): number => {
 export function useVisitSummary(technicianId: string, visit: Visit): SectionStatuses {
   const forms = useVisitFormResponses(visit.id);
   const materials = useVisitMaterials(visit.id);
-  const annotation = useVisitAnnotation(visit.id);
+  const plans = useVisitAnnotations(visit.id);
   // Solo se cuentan las fotos: no hace falta cargar las filas.
   const photoStats = useQuery<{ total: unknown; pending: unknown }>(VISIT_PHOTO_STATS_SQL, [
     visit.id,
@@ -39,12 +39,14 @@ export function useVisitSummary(technicianId: string, visit: Visit): SectionStat
   const photoTotal = toCount(statsRow?.total);
   const photoPending = toCount(statsRow?.pending);
   const photoState = { isLoading: photoStats.isLoading, hasError: Boolean(photoStats.error) };
-  const elementCount = annotation.annotation?.elements.length ?? 0;
+  const elementCount = plans.annotations.reduce((total, plan) => total + plan.elements.length, 0);
 
   return {
     'form-select': sectionStatusText(forms, () => formsStatusText(forms.responses)),
     materials: sectionStatusText(materials, () => materialsStatusText(materials.summary)),
     photos: sectionStatusText(photoState, () => photosStatusText(photoTotal, photoPending)),
-    annotations: sectionStatusText(annotation, () => annotationsStatusText(elementCount)),
+    annotations: sectionStatusText(plans, () =>
+      annotationsStatusText(plans.annotations.length, elementCount),
+    ),
   };
 }

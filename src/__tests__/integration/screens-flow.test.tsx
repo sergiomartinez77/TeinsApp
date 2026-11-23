@@ -183,7 +183,7 @@ it('dashboard → listado → nueva visita → iniciar → materiales → resume
   expect(screen.getByLabelText('Materiales: 1 material · 25 metro')).toBeOnTheScreen();
   expect(screen.getByLabelText('Formulario técnico: Sin iniciar')).toBeOnTheScreen();
   expect(screen.getByLabelText('Fotografías: Sin fotografías')).toBeOnTheScreen();
-  expect(screen.getByLabelText('Anotaciones: Sin anotaciones')).toBeOnTheScreen();
+  expect(screen.getByLabelText('Planos: Sin planos')).toBeOnTheScreen();
 
   // De vuelta al dashboard, los conteos reflejan la visita nueva ya iniciada.
   await act(async () => resetFakeRouter('/home'));

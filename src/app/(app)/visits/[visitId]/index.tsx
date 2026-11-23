@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
 import { ConnectivityBanner, ErrorScreen, LoadingScreen, ReadOnlyNotice } from '@/components/ui';
+import { VisitReportButton } from '@/features/reports/components/VisitReportButton';
+import { useVisitReport } from '@/features/reports/hooks/useVisitReport';
 import { SectionGrid, type VisitSection } from '@/features/visits/components/SectionGrid';
 import { VisitActionBar } from '@/features/visits/components/VisitActionBar';
 import { VisitInfoCard } from '@/features/visits/components/VisitInfoCard';
@@ -29,6 +31,7 @@ export default function VisitDetailScreen() {
 
   const { visit, isLoading, hasError } = useVisit(user.id, visitId);
   const { start, complete } = useVisitActions();
+  const report = useVisitReport(visitId);
   const split = isSplitViewWidth(width);
 
   const openSection = (section: VisitSection) =>
@@ -73,12 +76,16 @@ export default function VisitDetailScreen() {
     </>
   );
   const actions = (
-    <VisitActionBar
-      status={visit.status}
-      onStart={() => start.mutate(visit.id)}
-      onComplete={confirmComplete}
-      isBusy={start.isPending || complete.isPending}
-    />
+    <>
+      <VisitActionBar
+        status={visit.status}
+        onStart={() => start.mutate(visit.id)}
+        onComplete={confirmComplete}
+        isBusy={start.isPending || complete.isPending}
+      />
+      {/* Informe PDF: se genera en el teléfono, también sin conexión. */}
+      <VisitReportButton onPress={report.shareReport} step={report.step} />
+    </>
   );
   const grid = <SectionGrid onOpen={openSection} />;
 

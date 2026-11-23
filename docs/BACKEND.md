@@ -74,6 +74,7 @@ En el panel: **SQL Editor → New query**. Para **cada archivo**, en este orden 
 5. `supabase/migrations/20261118000100_fotos_ubicacion.sql`
 6. `supabase/migrations/20261118000200_materiales_personalizados.sql`
 7. `supabase/migrations/20261118000300_varios_formularios.sql`
+8. `supabase/migrations/20261122000100_planos_y_figuras.sql`
 
 abre el archivo en un editor de texto, copia **todo** su contenido, pégalo en el editor
 SQL y pulsa **Run**. Debe responder _Success. No rows returned_. Si el panel avisa de que
@@ -96,7 +97,8 @@ npx supabase db push                     # aplica supabase/migrations en orden
 ### 2.1. Contraseña del rol de PowerSync (obligatorio)
 
 La migración 4 crea el rol `powersync_role` (con `REPLICATION`, `BYPASSRLS` y solo
-`SELECT` sobre las 9 tablas), **sin contraseña**, porque el repositorio no debe contener
+`SELECT` sobre las 9 tablas; la migración 8 le añade `annotation_figures` y la 9,
+`material_stock` y `material_stock_movements`), **sin contraseña**, porque el repositorio no debe contener
 secretos. Genera una contraseña larga y aleatoria (p. ej. 32 caracteres del gestor de
 contraseñas, solo letras y números para evitar problemas en la URL de conexión) y, en el
 editor SQL, ejecuta **una vez**:
@@ -131,17 +133,115 @@ secciones 13–15 y 17, que además aplica las migraciones sobre un proyecto con
 `photos` y `form_responses` usan `SELECT *` y reciben las columnas nuevas solas. La
 publicación `powersync` no hay que tocarla.
 
+### 2.3. Proyecto que ya existe: planos y figuras (migración 8, obligatorio)
+
+Aplica `supabase/migrations/20261122000100_planos_y_figuras.sql` (Opción A u Opción B).
+Es idempotente y **conserva los planos existentes**:
+
+- `annotations`: se quita `UNIQUE (visit_id)` (**varios planos por visita**); columna
+  `format_version INTEGER NOT NULL DEFAULT 1` con CHECK 1 o 2 (1 = puntos normalizados
+  0–1 respecto a `canvas_width`/`canvas_height`, el formato antiguo; 2 = coordenadas en
+  centímetros, sin límites, grosores en píxeles de pantalla). Los planos existentes quedan
+  en 1 y no cambian. Política nueva `annotations_delete_own_technician`: el técnico puede
+  **borrar** los planos de sus visitas (no los de otros).
+- Tabla nueva `annotation_figures` (**biblioteca de figuras** de cada técnico, para
+  reutilizarlas en otras visitas): `technician_id`, `name` (1–60 caracteres), `elements`
+  (JSONB), `width`, `height`, `sync_status`. RLS: cada técnico ve, crea, modifica y borra
+  **solo las suyas** (oficina y admin no las ven; anónimo, sin acceso).
+- PowerSync: la tabla se añade a la publicación `powersync` y `powersync_role` recibe
+  `SELECT` sobre ella. Si usas un usuario `powersync_<id>` propio (paso 5), dale también
+  `GRANT SELECT ON public.annotation_figures TO "powersync_<id>";`.
+
+**PowerSync**: vuelve a pegar `powersync/sync-config.yaml` en _Sync Streams_ y pulsa
+**Deploy**: hay un stream nuevo, `mis_figuras`
+(`SELECT * FROM annotation_figures WHERE technician_id = auth.user_id()`).
+`annotations` usa `SELECT *` y recibe `format_version` sola.
+
+Comprobado en `npm run backend:validate` (secciones 16 y 18).
+
 **Orden de despliegue**: aplica las migraciones y despliega la configuración de PowerSync
 **antes** de instalar la versión nueva de la app. Si la app nueva sube datos a un servidor
 sin migrar, Supabase responde que la columna no existe; la subida se reintenta (no se
 pierde nada) pero no avanza hasta que se migre.
 
+### 2.4. Inventario de bodega (migración 9, obligatorio)
+
+Aplica `supabase/migrations/20261122000200_inventario.sql` (Opción A u Opción B). Es
+idempotente y **no cambia ninguna fila existente** de visitas ni materiales:
+
+- `material_catalog.min_stock NUMERIC(12,3)` (NULL = sin mínimo, CHECK ≥ 0): por debajo de
+  ese valor la app muestra el material en **«Qué comprar»**. Solo el **admin** lo cambia
+  (política `material_catalog_manage_admin` de la migración 2; desde la app o desde el
+  _Table Editor_). Oficina y técnicos lo leen.
+- Tabla nueva `material_stock_movements`: compras (`kind = 'purchase'`, cantidad > 0) y
+  ajustes (`kind = 'adjustment'`, cantidad ≠ 0, puede ser negativa) con `note` (≤ 500),
+  `created_by` (= `auth.uid()`) y `sync_status` (para que la app sepa qué movimientos aún no
+  subió). RLS: la **lee** cualquier usuario activo; **crear, modificar y borrar**, solo admin
+  u oficina (al crear, `created_by` tiene que ser el propio usuario). Un técnico que
+  intentara subir un movimiento recibe un rechazo (42501) que queda en _Cambios rechazados_.
+- Tabla nueva `material_stock`: existencias por material del catálogo (`purchased`,
+  `adjusted`, `used`, `on_hand = purchased + adjusted − used`; puede ser negativo si se
+  registró más uso que entradas). **Solo la escriben triggers** (funciones
+  `SECURITY DEFINER` del esquema `private`, sin permiso de ejecución para los clientes):
+  - compras y ajustes: alta, cambio (cantidad, tipo o material) y borrado;
+  - `visit_materials` del catálogo (`is_custom = false`): alta, cambio de cantidad, de
+    material o paso a/desde personalizado, y borrado (también el borrado en cascada al
+    borrar una visita). Los **personalizados no cuentan**: no son de bodega;
+  - material nuevo en el catálogo: nace con existencias en cero.
+
+  Nadie tiene política de escritura (ni el admin). `on_hand` es una columna normal y no
+  `GENERATED` porque la replicación lógica de PostgreSQL < 18, la que usa PowerSync, no
+  publica columnas generadas.
+
+- **Relleno**: al final la migración recalcula una fila por material del catálogo desde los
+  datos existentes (`used` = suma de los `visit_materials` del catálogo ya registrados;
+  compras y ajustes en 0). Las existencias iniciales quedarán **negativas** en los
+  materiales ya usados: registra un **ajuste** con el conteo físico de la bodega para
+  partir del valor real. Re-aplicar la migración vuelve a recalcular (corrige cualquier
+  descuadre) y solo toca las filas que no cuadran.
+- PowerSync: las dos tablas se añaden a la publicación `powersync` y reciben `SELECT` todos
+  los roles cuyo nombre empieza por `powersync` (`powersync_role` y, si existe, el usuario
+  `powersync_<id>` del paso 5). Si creas el usuario de PowerSync **después** de aplicar esta
+  migración, dale también
+  `GRANT SELECT ON public.material_stock, public.material_stock_movements TO "powersync_<id>";`
+  (o vuelve a ejecutar la migración).
+
+**Orden de despliegue** (en este orden):
+
+1. Aplica la migración `20261122000200_inventario.sql`.
+2. Vuelve a pegar `powersync/sync-config.yaml` en _Sync Streams_ y pulsa **Validate** y
+   **Deploy**. El stream `catalogos` ahora enumera las columnas de `material_catalog` (por
+   el `CAST(min_stock AS real)`; una columna nueva del catálogo hay que añadirla ahí) e
+   incluye `material_stock` (entregada como `material_id AS id`, porque PowerSync necesita
+   una columna `id`) y `material_stock_movements` (todos los movimientos).
+3. Instala la versión nueva de la app. Con la app anterior no pasa nada: ignora las tablas
+   nuevas, y el uso de materiales que registre sigue descontándose por los triggers.
+
+**Limitaciones conocidas**:
+
+- Las existencias que muestra la app son las que calculó el servidor en la última
+  sincronización. Una compra, un ajuste o un material usado en una visita registrados en el
+  dispositivo **no cambian el número hasta que el servidor los recibe**; mientras tanto la
+  app marca el material como «Pendiente de sincronizar» (no inventa un valor provisional).
+- El **consumo por rango de fechas** (`getConsumption` en
+  `src/features/inventory/services/inventory.service.ts`) suma los `visit_materials` de las
+  visitas **que hay en el dispositivo**. El stream `mis_visitas` solo entrega las visitas
+  asignadas al usuario (`technician_id = auth.user_id()`), también a admin y oficina: para
+  un consumo de toda la empresa en la app habría que añadir un stream de todas las visitas
+  para esos roles (no incluido). Las existencias (`material_stock.used`) sí cuentan las
+  visitas de todos los técnicos, porque las calcula el servidor.
+- Un cambio de `min_stock` hecho por alguien que ya no es admin no da error: la RLS lo
+  ignora (0 filas) y el valor vuelve al del servidor en la siguiente sincronización.
+
+Comprobado en `npm run backend:validate` (sección 19: RLS, cuentas de los triggers,
+personalizados, borrado en cascada, `min_stock`; sección 18: relleno con datos existentes).
+
 ## 3. Comprobar el resultado en el panel
 
-- **Table Editor**: 10 tablas (`profiles`, `visits`, … `audit_logs`), todas con el
-  candado de RLS activado.
+- **Table Editor**: 13 tablas (`profiles`, `visits`, … `material_stock`,
+  `material_stock_movements`, `audit_logs`), todas con el candado de RLS activado.
 - **Storage**: bucket `visit-photos`, privado.
-- **Database → Publications**: `powersync` con 9 tablas.
+- **Database → Publications**: `powersync` con 12 tablas (todas menos `audit_logs`).
 
 ---
 
@@ -255,7 +355,9 @@ Supabase local, no al proyecto en la nube.)
 > GRANT USAGE ON SCHEMA public TO "powersync_<id>";
 > GRANT SELECT ON public.profiles, public.visit_types, public.form_templates,
 >   public.visits, public.form_responses, public.material_catalog,
->   public.visit_materials, public.photos, public.annotations TO "powersync_<id>";
+>   public.visit_materials, public.photos, public.annotations,
+>   public.annotation_figures, public.material_stock,
+>   public.material_stock_movements TO "powersync_<id>";
 > ```
 >
 > Después vuelve a pulsar **Deploy** en Sync Streams. Para comprobar que sincroniza:
@@ -263,8 +365,10 @@ Supabase local, no al proyecto en la nube.)
 > `powersync_…` con `active = true`.
 
 La configuración sincroniza, para cada usuario: su perfil, sus visitas, las respuestas,
-materiales, fotos y anotaciones de esas visitas, y los tipos de visita, plantillas y
-materiales activos. Los JSONB (`responses`, `elements`, `sections_json`) llegan como
+materiales, fotos y planos (anotaciones) de esas visitas, sus figuras guardadas
+(`annotation_figures`), los tipos de visita, plantillas y
+materiales activos, y el inventario de la bodega (`material_stock` y
+`material_stock_movements`, iguales para todos). Los JSONB (`responses`, `elements`, `sections_json`) llegan como
 texto JSON y los booleanos como 1/0, que es lo que espera la app.
 
 Con la CLI de PowerSync, el mismo archivo se usa como `powersync/sync-config.yaml`
@@ -404,6 +508,95 @@ tablas de Storage con RLS y `storage.foldername`). No se prueban la API REST rea
 servicio de Storage (tamaño máximo y tipos MIME los aplica ese servicio), la replicación
 lógica ni la conexión de PowerSync. Eso se comprueba con `npm run backend:check` y en un
 dispositivo (paso 7).
+
+## 11. Asistente (chatbot)
+
+La pantalla **Asistente** (Inicio → «Asistente») responde preguntas sobre existencias, qué
+comprar, consumo de materiales, visitas, el PDF de una visita y cómo usar la app. Tiene dos
+motores detrás de la misma pantalla; la app elige sola cuál usa:
+
+| Motor                    | Dónde corre                                   | Costo               | Cuándo se usa                                                         |
+| ------------------------ | --------------------------------------------- | ------------------- | --------------------------------------------------------------------- |
+| **Asistente básico**     | En el teléfono, sin IA (reglas en español)    | Gratis, siempre     | Sin conexión, en modo demo, si la función no está activada o si falla |
+| **Asistente con Claude** | Función Edge `assistant` de Supabase + Claude | Por uso (ver abajo) | Con conexión y la función activada (`ANTHROPIC_API_KEY` configurada)  |
+
+Los dos responden solo con datos reales: el básico con la base local del teléfono (APIs de
+inventario e informes) y la guía de uso (`src/features/assistant/knowledge/guide.ts`); el de
+Claude con herramientas que consultan Postgres **con el token del usuario**, así que la RLS
+decide qué ve cada uno (el técnico, sus visitas; oficina y administración, todas). Ninguno
+escribe datos. El PDF siempre se genera en el teléfono: la función solo devuelve la acción
+«Compartir PDF» y la app la ejecuta con la API de informes (por eso un PDF solo se puede
+generar en el teléfono del técnico de la visita).
+
+Mientras no actives Claude, la app funciona igual con el asistente básico: la función responde
+`503 not_configured`, la app lo recuerda durante la sesión y no lo vuelve a intentar. Si la
+función no está desplegada (404), pasa lo mismo.
+
+### 11.1. Desplegar la función
+
+El código está en `supabase/functions/assistant/` (`index.ts` conecta Deno con la lógica de
+`handler.ts`, `tools.ts`, `loop.ts`, `prompt.ts`; `guide.json` es la guía generada). Con la
+CLI de Supabase y la sesión iniciada (`npx supabase login`):
+
+```bash
+npx supabase functions deploy assistant --project-ref <REF_DEL_PROYECTO>
+```
+
+- Deja **activa** la verificación del JWT (es el valor por defecto; no uses `--no-verify-jwt`):
+  solo usuarios con sesión pueden llamarla.
+- La función usa `npm:@anthropic-ai/sdk` y `npm:@supabase/supabase-js@2` (Deno los descarga al
+  desplegar) y las variables `SUPABASE_URL` / `SUPABASE_ANON_KEY` que Supabase ya inyecta.
+- Si cambias la guía (`guide.ts`), ejecuta `npm run assistant:guide` y vuelve a desplegar. Un
+  test falla si `guide.json` quedó desactualizado.
+- Para revisar tipos de `index.ts` con Deno (opcional): `deno check supabase/functions/assistant/index.ts`.
+  El `tsc` de la app excluye ese archivo; el resto de la función sí lo compila y lo prueba jest.
+
+### 11.2. Activar Claude (cuando se venda la app)
+
+Supabase Dashboard → **Edge Functions → Secrets** (o `npx supabase secrets set …`):
+
+| Secreto             | Valor                                                                     |
+| ------------------- | ------------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY` | Clave de la consola de Anthropic (<https://console.anthropic.com>)        |
+| `ASSISTANT_MODEL`   | `claude-haiku-5-5` (por defecto), `claude-sonnet-5-5` o `claude-opus-5-5` |
+| `ASSISTANT_EFFORT`  | Opcional: `low` (por defecto, chat) o `medium`                            |
+
+No hace falta otra versión de la app: al haber clave, la siguiente sesión empieza a usar Claude
+(en la pantalla aparece «Asistente con IA (Claude)» bajo cada respuesta). Para volver al
+básico, borra `ANTHROPIC_API_KEY`. Cambiar de modelo es solo cambiar `ASSISTANT_MODEL`.
+
+Detalles de la integración: bucle de herramientas de hasta 6 pasos; caché de prompts en las
+instrucciones y herramientas (se cobran a precio reducido en cada pregunta); con Opus 5.5 y
+Sonnet 5.5 se activa el reintento del servidor en otro modelo si un filtro de seguridad rechaza
+la petición (`fallbacks: "default"`); Haiku 5.5 no tiene ese reintento y el rechazo se responde
+con un mensaje honesto. Los errores de Anthropic vuelven como JSON (`rate_limited`,
+`overloaded`, `ai_auth`, `ai_unavailable`) y la app responde con el básico avisando.
+
+### 11.3. Modelo y costos
+
+Precios de Anthropic por millón de tokens (entrada / salida), noviembre de 2026; confírmalos en
+<https://www.anthropic.com/pricing> antes de presupuestar:
+
+| Modelo                       | Entrada   | Salida    | Uso recomendado                                 |
+| ---------------------------- | --------- | --------- | ----------------------------------------------- |
+| `claude-haiku-5-5` (defecto) | ≈ US$0,10 | ≈ US$0,50 | Chat del día a día: rápido y muy barato         |
+| `claude-opus-5-5`            | ≈ US$4    | ≈ US$20   | Preguntas más complejas; unas 40 veces más caro |
+
+Orientación (no es una cotización): una pregunta típica usa unos pocos miles de tokens de
+entrada (gran parte en caché) y algunos cientos de salida, del orden de **US$0,001 con Haiku
+5.5** y **US$0,04 con Opus 5.5**. El precio de Haiku 5.5 indicado es para peticiones de hasta
+100 000 tokens (las del asistente quedan muy por debajo).
+
+- Anthropic da **créditos de prueba** al crear la cuenta, pero **no tiene un plan gratuito
+  permanente**: después se paga por uso (configura un límite de gasto en la consola).
+- El **asistente básico es siempre gratis** y no depende de Anthropic ni de Internet.
+
+### 11.4. Probar la función
+
+- `npx jest supabase/functions` prueba la lógica (herramientas, bucle, errores) con clientes
+  simulados.
+- Con la función desplegada y sin clave: en la app, una pregunta responde el básico sin aviso.
+- Con clave: ver docs/PRUEBAS_MANUALES.md §25.
 
 ## Referencias
 

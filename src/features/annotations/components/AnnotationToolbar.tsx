@@ -17,10 +17,17 @@ export interface AnnotationToolbarProps {
   color: number;
   sizeId: StrokeSizeId;
   canUndo: boolean;
+  canRedo: boolean;
+  /** Ajuste a la cuadrícula y a ángulos de 15°. */
+  snap: boolean;
   onToolChange: (tool: AnnotationTool) => void;
   onColorChange: (color: number) => void;
   onSizeChange: (size: StrokeSizeId) => void;
   onUndo: () => void;
+  onRedo: () => void;
+  onSnapChange: (snap: boolean) => void;
+  /** Abre la biblioteca de figuras guardadas. */
+  onOpenFigures: () => void;
   /** `bottom`: filas bajo el canvas. `side`: columna al lado (horizontal / tablet). */
   layout?: 'bottom' | 'side';
 }
@@ -28,8 +35,8 @@ export interface AnnotationToolbarProps {
 const SWATCH_SIZE = 32;
 
 /**
- * Barra de herramientas del dibujo sobre fondo oscuro: herramientas, colores,
- * grosores y deshacer. Cada control tiene 48dp de área táctil y anuncia si
+ * Barra de herramientas del plano sobre fondo oscuro: herramientas, colores,
+ * grosores, ajuste a la cuadrícula, figuras, deshacer y rehacer. Cada control tiene 48dp de área táctil y anuncia si
  * está seleccionado.
  */
 export function AnnotationToolbar({
@@ -37,10 +44,15 @@ export function AnnotationToolbar({
   color,
   sizeId,
   canUndo,
+  canRedo,
+  snap,
   onToolChange,
   onColorChange,
   onSizeChange,
   onUndo,
+  onRedo,
+  onSnapChange,
+  onOpenFigures,
   layout = 'bottom',
 }: AnnotationToolbarProps) {
   const side = layout === 'side';
@@ -125,6 +137,39 @@ export function AnnotationToolbar({
     </Pressable>
   );
 
+  const redo = (
+    <ToolbarButton
+      label="Rehacer"
+      selected={false}
+      disabled={!canRedo}
+      onPress={onRedo}
+      testID="annotation-redo"
+    >
+      <Icon name="redo" size={24} color={colors.onPrimary} />
+    </ToolbarButton>
+  );
+
+  const extras = (
+    <>
+      <ToolbarButton
+        label="Ajustar a la cuadrícula"
+        selected={snap}
+        onPress={() => onSnapChange(!snap)}
+        testID="annotation-snap"
+      >
+        <Icon name="grid-on" size={24} color={snap ? colors.primary : colors.onPrimary} />
+      </ToolbarButton>
+      <ToolbarButton
+        label="Figuras guardadas"
+        selected={false}
+        onPress={onOpenFigures}
+        testID="annotation-figures"
+      >
+        <Icon name="category" size={24} color={colors.onPrimary} />
+      </ToolbarButton>
+    </>
+  );
+
   if (side) {
     return (
       <ScrollView
@@ -137,7 +182,10 @@ export function AnnotationToolbar({
         <View style={styles.grid}>{swatches}</View>
         <Divider horizontal />
         <View style={styles.grid}>{sizes}</View>
+        <Divider horizontal />
+        <View style={styles.grid}>{extras}</View>
         {undo}
+        {redo}
       </ScrollView>
     );
   }
@@ -150,6 +198,8 @@ export function AnnotationToolbar({
         contentContainerStyle={styles.row}
       >
         {tools}
+        <Divider />
+        {extras}
       </ScrollView>
       <ScrollView
         horizontal
@@ -161,6 +211,7 @@ export function AnnotationToolbar({
         {sizes}
         <Divider />
         {undo}
+        {redo}
       </ScrollView>
     </View>
   );
@@ -173,21 +224,32 @@ interface ToolbarButtonProps {
   testID: string;
   /** Sin fondo de selección (las muestras de color marcan la selección ellas mismas). */
   plain?: boolean;
+  disabled?: boolean;
   children: ReactNode;
 }
 
-function ToolbarButton({ label, selected, onPress, testID, plain, children }: ToolbarButtonProps) {
+function ToolbarButton({
+  label,
+  selected,
+  onPress,
+  testID,
+  plain,
+  disabled = false,
+  children,
+}: ToolbarButtonProps) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled }}
       testID={testID}
       style={({ pressed }) => [
         styles.button,
         selected && !plain && styles.selected,
         pressed && styles.pressed,
+        disabled && styles.disabled,
       ]}
     >
       {children}

@@ -1,0 +1,310 @@
+{
+  "generatedFrom": "src/features/assistant/knowledge/guide.ts",
+  "topics": [
+    {
+      "id": "iniciar-sesion",
+      "title": "Iniciar sesión",
+      "summary": "Entrar a la app con tu cuenta o probarla en modo demo.",
+      "keywords": [
+        "iniciar sesion",
+        "inicio sesion",
+        "sesion",
+        "login",
+        "entrar",
+        "ingresar",
+        "contrasena",
+        "cuenta",
+        "demo",
+        "cerrar sesion",
+        "salir"
+      ],
+      "steps": [
+        "Abre la app TEINS.",
+        "Escribe tu correo electrónico y tu contraseña.",
+        "Toca «Iniciar sesión». La primera vez necesitas Internet; después la sesión queda guardada en el teléfono.",
+        "Para probar la app sin cuenta, toca «Continuar en modo demo»: usa datos de ejemplo y nada se envía al servidor.",
+        "Para salir, en el inicio toca el botón de cerrar sesión (arriba a la derecha) y confirma."
+      ],
+      "notes": [
+        "Las cuentas las crea la administración: la app no tiene registro público.",
+        "Si cierras sesión con cambios sin sincronizar, se conservan en el teléfono y se envían cuando vuelvas a entrar con tu cuenta."
+      ]
+    },
+    {
+      "id": "crear-visita",
+      "title": "Crear una visita",
+      "summary": "Registrar una visita nueva desde el teléfono.",
+      "keywords": [
+        "crear visita",
+        "nueva visita",
+        "agregar visita",
+        "registrar visita",
+        "alta visita"
+      ],
+      "steps": [
+        "En el inicio toca «Nueva visita» (o en «Mis visitas», el botón «Nueva visita»).",
+        "Escribe el «Título» (obligatorio), por ejemplo «Inspección tablero principal».",
+        "Elige el «Tipo de visita» (obligatorio).",
+        "Si quieres, completa «Dirección» y «Descripción».",
+        "Toca «Crear visita». La visita queda «Asignada» y aparece en «Mis visitas»."
+      ],
+      "notes": [
+        "Se puede crear sin Internet: se envía al servidor al sincronizar."
+      ],
+      "roles": {
+        "technician": "Los técnicos pueden crear visitas.",
+        "admin": "La administración también puede crear visitas desde la app.",
+        "office": "El rol de oficina no crea visitas desde la app."
+      }
+    },
+    {
+      "id": "iniciar-completar-visita",
+      "title": "Iniciar y finalizar una visita",
+      "summary": "Cambiar el estado de la visita de «Asignada» a «En progreso» y luego a «Completada».",
+      "keywords": [
+        "iniciar visita",
+        "empezar visita",
+        "comenzar",
+        "finalizar visita",
+        "terminar visita",
+        "completar visita",
+        "cerrar visita",
+        "estado"
+      ],
+      "steps": [
+        "Abre la visita desde «Mis visitas» (puedes buscar por título, cliente, dirección o tipo, y filtrar por Todas, En progreso, Asignadas o Completadas).",
+        "Toca «Iniciar visita»: el estado pasa a «En progreso» y se guarda la hora de inicio.",
+        "Trabaja en las secciones: Formulario técnico, Materiales, Fotografías, Planos y Resumen.",
+        "Cuando termines, toca «Finalizar visita» y confirma con «Finalizar»."
+      ],
+      "notes": [
+        "Al finalizar, la visita queda cerrada: se puede consultar y compartir su PDF, pero ya no editar.",
+        "«Finalizar visita» no exige tener formularios completados.",
+        "Todo funciona sin Internet; los cambios se sincronizan solos al volver la conexión."
+      ]
+    },
+    {
+      "id": "formularios",
+      "title": "Formularios técnicos (uno o varios por visita)",
+      "summary": "Llenar los formularios de inspección de la visita.",
+      "keywords": [
+        "formulario",
+        "formularios",
+        "plantilla",
+        "checklist",
+        "llenar",
+        "completar formulario",
+        "campos",
+        "inspeccion"
+      ],
+      "steps": [
+        "En la visita, toca «Formulario técnico». Se abre la lista «Formularios técnicos».",
+        "Toca «Agregar formulario» y elige una plantilla (las del tipo de visita aparecen primero como «Recomendado»).",
+        "Llena los campos. Usa «Anterior» y «Siguiente» para pasar de sección; lo escrito se guarda solo.",
+        "Para agregar otro formulario, vuelve a la lista y toca «Agregar formulario» de nuevo (cada plantilla se usa una vez por visita).",
+        "Cuando esté listo, toca «Completar formulario». Si falta algún campo obligatorio, la app te lleva a la sección con errores."
+      ],
+      "notes": [
+        "En la lista se ve cada formulario «En curso» o «Completado» y cuántos campos obligatorios llevas.",
+        "Un formulario completado queda de solo lectura; los demás siguen editables.",
+        "Las plantillas se descargan al sincronizar."
+      ]
+    },
+    {
+      "id": "fotos",
+      "title": "Fotografías con fecha, hora y ubicación",
+      "summary": "Tomar o elegir fotos de la visita con la marca impresa.",
+      "keywords": [
+        "foto",
+        "fotos",
+        "fotografia",
+        "fotografias",
+        "camara",
+        "galeria",
+        "imagen",
+        "sello",
+        "marca",
+        "ubicacion",
+        "gps",
+        "coordenadas"
+      ],
+      "steps": [
+        "En la visita, toca «Fotografías».",
+        "Toca el botón de la cámara («Tomar fotografía») o el de la galería («Elegir de la galería»).",
+        "La primera vez acepta los permisos de cámara y de ubicación «mientras usas la app».",
+        "La foto se guarda con una franja impresa: fecha y hora, coordenadas con su precisión (por ejemplo ±8 m) y el título de la visita.",
+        "Toca una miniatura para verla en grande; desde el visor también puedes eliminarla (confirmando)."
+      ],
+      "notes": [
+        "Sin permiso o sin señal GPS la foto se guarda igual, con «Ubicación no disponible».",
+        "En fotos de la galería se usa la fecha de la foto; la ubicación solo si el sistema la entrega.",
+        "Las fotos se reducen para ocupar poco y se suben al servidor cuando hay conexión."
+      ]
+    },
+    {
+      "id": "materiales",
+      "title": "Materiales del catálogo y personalizados",
+      "summary": "Registrar los materiales usados en la visita.",
+      "keywords": [
+        "material",
+        "materiales",
+        "agregar material",
+        "catalogo",
+        "personalizado",
+        "cantidad",
+        "unidad",
+        "quitar material"
+      ],
+      "steps": [
+        "En la visita, toca «Materiales» y luego «Agregar material».",
+        "Busca por código o nombre y elige el material del catálogo.",
+        "Escribe la «Cantidad» (puedes usar coma decimal, por ejemplo 12,5) y, si quieres, «Observaciones». Toca «Agregar».",
+        "Si el material no está en el catálogo, toca «Agregar material que no está en el catálogo», escribe el nombre, elige la unidad (o «Otra» para escribirla) y la cantidad.",
+        "Para cambiar la cantidad toca el lápiz del material; para quitarlo, el botón de quitar y confirma."
+      ],
+      "notes": [
+        "Un material ya agregado aparece como «Ya agregado» en la búsqueda.",
+        "Los personalizados llevan la marca «Personalizado», solo se agregan a esa visita y no descuentan del inventario.",
+        "Los materiales del catálogo usados en visitas se descuentan de la bodega cuando el servidor recibe el cambio."
+      ]
+    },
+    {
+      "id": "planos",
+      "title": "Planos y figuras",
+      "summary": "Dibujar planos de la visita y reutilizar figuras guardadas.",
+      "keywords": [
+        "plano",
+        "planos",
+        "dibujar",
+        "dibujo",
+        "croquis",
+        "figura",
+        "figuras",
+        "cota",
+        "medida",
+        "anotacion",
+        "anotaciones"
+      ],
+      "steps": [
+        "En la visita, toca «Planos» y luego «Nuevo plano» (el nombre es opcional, por ejemplo «Planta baja»).",
+        "Elige una herramienta: Lápiz, Línea, Flecha, Rectángulo, Círculo, Cota, Texto, Marcador o Borrador; cambia color y grosor en la barra.",
+        "Pellizca para acercar o alejar y arrastra con dos dedos (o usa «Mover vista») para desplazarte. «Ajustar a la cuadrícula» alinea los puntos y muestra la medida.",
+        "Con «Seleccionar» marca elementos para moverlos, duplicarlos, borrarlos o «Guardar como figura».",
+        "Para reutilizar una figura en otra visita, toca «Figuras guardadas» y elígela."
+      ],
+      "notes": [
+        "Puedes tener varios planos por visita; cada uno se puede renombrar o eliminar desde la lista.",
+        "Deshacer y Rehacer están en la barra; el plano se guarda solo."
+      ]
+    },
+    {
+      "id": "inventario",
+      "title": "Inventario de bodega: existencias, qué comprar, compras y ajustes",
+      "summary": "Consultar existencias y registrar movimientos de bodega.",
+      "keywords": [
+        "inventario",
+        "bodega",
+        "stock",
+        "existencias",
+        "comprar",
+        "compra",
+        "ajuste",
+        "minimo",
+        "que comprar",
+        "reponer"
+      ],
+      "steps": [
+        "En el inicio toca «Inventario».",
+        "Arriba aparecen «Qué comprar» (materiales bajo mínimo con la cantidad sugerida) y luego la lista con las existencias de cada material.",
+        "Busca por código o nombre, o marca «Solo bajo mínimo».",
+        "Toca un material para ver el detalle: En bodega, Compras, Ajustes, Usado en visitas, Mínimo e historial.",
+        "Administración u oficina: en el detalle toca «Registrar compra» o «Ajuste», escribe la cantidad (en un ajuste puede ser negativa, nunca 0) y una nota opcional.",
+        "Administración: en el detalle toca «Mínimo» para fijar o quitar el mínimo de bodega."
+      ],
+      "notes": [
+        "Las existencias las calcula el servidor (compras + ajustes − uso en visitas). Un movimiento nuevo aparece «Pendiente de sincronizar» y las existencias cambian cuando se sincroniza.",
+        "La cantidad sugerida es lo que falta para llegar al mínimo, redondeado hacia arriba."
+      ],
+      "roles": {
+        "technician": "Como técnico puedes consultar existencias y «Qué comprar»; las compras y los ajustes los registra oficina o administración.",
+        "office": "Oficina puede registrar compras y ajustes; el mínimo lo cambia administración.",
+        "admin": "Administración puede registrar compras, ajustes y cambiar el mínimo."
+      }
+    },
+    {
+      "id": "pdf",
+      "title": "Informe PDF de la visita",
+      "summary": "Generar el PDF de una visita y compartirlo.",
+      "keywords": [
+        "pdf",
+        "informe",
+        "reporte",
+        "compartir",
+        "descargar",
+        "enviar",
+        "whatsapp",
+        "correo"
+      ],
+      "steps": [
+        "Abre la visita y toca «Compartir PDF».",
+        "Espera mientras dice «Generando PDF...»: se crea en el teléfono, también sin conexión.",
+        "Se abre el menú del sistema para compartir: elige WhatsApp, correo, Drive o guárdalo en Archivos.",
+        "También puedes pedírselo al asistente: «PDF de la visita de <cliente>»."
+      ],
+      "notes": [
+        "El PDF incluye datos de la visita, formularios, materiales, fotos con su marca y planos.",
+        "Se incluyen hasta 40 fotos (las más recientes); una nota indica cuántas se omitieron.",
+        "Funciona también con la visita finalizada."
+      ]
+    },
+    {
+      "id": "sincronizacion",
+      "title": "Sincronización y trabajo sin Internet",
+      "summary": "Cómo se guardan y envían los datos.",
+      "keywords": [
+        "sincronizar",
+        "sincronizacion",
+        "sin internet",
+        "sin conexion",
+        "offline",
+        "modo avion",
+        "enviar datos",
+        "pendientes de enviar",
+        "subir"
+      ],
+      "steps": [
+        "Trabaja normalmente: todo se guarda primero en el teléfono, con o sin Internet.",
+        "Sin conexión verás el aviso «Sin conexión — trabajando localmente».",
+        "Al volver la conexión, la app envía y recibe los cambios sola; el inicio muestra «Sincronizando» y luego «Sincronizado».",
+        "Si hay cambios por enviar, el inicio lo indica («Hay N cambios por enviar»)."
+      ],
+      "notes": [
+        "Si el servidor rechaza algún cambio, el inicio muestra un aviso y la información queda guardada para revisión.",
+        "Las fotos se suben cuando hay conexión; si se corta, vuelven a la cola y se reintentan."
+      ]
+    },
+    {
+      "id": "asistente",
+      "title": "Usar el asistente",
+      "summary": "Preguntar por inventario, visitas, consumo, PDF o cómo usar la app.",
+      "keywords": [
+        "asistente",
+        "chat",
+        "chatbot",
+        "preguntar",
+        "ayuda",
+        "que puedes hacer"
+      ],
+      "steps": [
+        "En el inicio toca «Asistente».",
+        "Escribe tu pregunta o toca una sugerencia, por ejemplo «¿Qué tengo que comprar?» o «¿Cuánto cable queda?».",
+        "Si la respuesta trae un botón («Compartir PDF», «Abrir inventario»), tócalo para continuar.",
+        "Sin Internet responde el asistente básico con los datos guardados en el teléfono."
+      ],
+      "notes": [
+        "Las respuestas salen de los datos reales de la app; si un dato no está, el asistente lo dice.",
+        "La conversación no se guarda: se borra al cerrar sesión."
+      ]
+    }
+  ]
+}

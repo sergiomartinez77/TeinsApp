@@ -7,19 +7,49 @@ import { UpdateType, type CrudEntry } from '@powersync/react-native';
  * "escritor remoto", lo que permite probarlo sin dispositivo ni red.
  */
 
-/** Tablas que el técnico puede escribir según las políticas RLS del servidor. */
+/**
+ * Tablas que la app escribe y sube. Las políticas RLS del servidor deciden
+ * quién puede hacerlo (un rechazo queda registrado como incidencia):
+ * - `material_stock_movements`: solo admin u oficina.
+ * - `material_catalog`: solo el admin, y la app solo sube cambios de
+ *   `min_stock` (ver `PATCH_ONLY_COLUMNS`).
+ * `material_stock` NO está: la calculan triggers del servidor.
+ */
 export const WRITABLE_TABLES: ReadonlySet<string> = new Set([
   'visits',
   'form_responses',
   'visit_materials',
   'photos',
   'annotations',
+  'annotation_figures',
+  'material_stock_movements',
+  'material_catalog',
 ]);
+
+/**
+ * Tablas en las que la app solo puede MODIFICAR (PATCH) ciertas columnas.
+ * Cualquier otra operación (alta, borrado, otra columna) se registra como
+ * incidencia sin enviarse: el catálogo sigue siendo de solo lectura salvo el
+ * mínimo de bodega que fija el admin.
+ */
+const PATCH_ONLY_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  material_catalog: ['min_stock'],
+};
+
+/** ¿La operación está permitida en una tabla de columnas restringidas? */
+function isAllowedEntry(entry: CrudEntry): boolean {
+  const allowed = PATCH_ONLY_COLUMNS[entry.table];
+  if (!allowed) return true;
+  if (entry.op !== UpdateType.PATCH) return false;
+  const columns = Object.keys(entry.opData ?? {});
+  return columns.length > 0 && columns.every((column) => allowed.includes(column));
+}
 
 /** Columnas JSONB en PostgreSQL que localmente son texto con JSON serializado. */
 const JSON_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   form_responses: ['responses'],
   annotations: ['elements'],
+  annotation_figures: ['elements'],
   form_templates: ['sections_json'],
 };
 
@@ -27,6 +57,7 @@ const JSON_COLUMNS: Readonly<Record<string, readonly string[]>> = {
 const BOOLEAN_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   form_responses: ['is_complete'],
   visit_materials: ['is_custom'],
+  material_catalog: ['is_active'],
 };
 
 /** Tablas cuya columna `sync_status` usa el enum general de sincronización. */
@@ -35,6 +66,8 @@ const SYNC_STATUS_TABLES: ReadonlySet<string> = new Set([
   'form_responses',
   'visit_materials',
   'annotations',
+  'annotation_figures',
+  'material_stock_movements',
 ]);
 
 const UNSYNCED_STATES: ReadonlySet<unknown> = new Set([
@@ -179,7 +212,7 @@ export async function uploadNextTransaction(
   let uploaded = 0;
 
   for (const entry of transaction.crud) {
-    if (!WRITABLE_TABLES.has(entry.table)) {
+    if (!WRITABLE_TABLES.has(entry.table) || !isAllowedEntry(entry)) {
       issues.push({
         table: entry.table,
         rowId: entry.id,

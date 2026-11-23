@@ -112,7 +112,7 @@ terminan.
 
 Ver la sección 7 y 8.
 
-### 6.5 Anotaciones
+### 6.5 Planos
 
 Ver la sección 9.
 
@@ -153,20 +153,54 @@ Ver la sección 9.
 8. [ ] Foto ya subida y borrada del dispositivo (con backend). **Esperado**: se descarga con
        URL firmada; sin conexión muestra "La fotografía no está disponible sin conexión."
 
-## 9. Lienzo de anotaciones — P1
+## 9. Planos — P1
 
-1. [ ] Cada herramienta: trazo libre, línea, flecha, rectángulo, círculo, texto y marcador.
-       **Esperado**: se dibuja donde está el dedo, con el color y grosor elegidos.
-2. [ ] Texto: escribe, confirma y cancela. **Esperado**: el texto aparece donde se tocó.
-3. [ ] Borrador: toca un elemento. **Esperado**: se borra solo ese elemento.
-4. [ ] Deshacer varias veces (hasta 20). **Esperado**: deshace en orden; el botón se
-       desactiva cuando no queda nada.
-5. [ ] Gira la pantalla con dibujos hechos. **Esperado**: los elementos conservan su posición
-       y proporción relativas; nada se deforma ni se pierde.
-6. [ ] Dibuja trazos largos y rápidos durante 30 s. **Esperado**: fluido (sin tirones
-       visibles), sin retraso entre el dedo y el trazo.
-7. [ ] Sal y vuelve a entrar. **Esperado**: la anotación se conserva (autoguardado).
-8. [ ] En una visita cerrada. **Esperado**: solo lectura, sin herramientas.
+Requiere la migración `20261122000100_planos_y_figuras.sql` aplicada y la config de sync
+desplegada (ver `docs/BACKEND.md`, paso 8).
+
+**Varios planos por visita**
+
+1. [ ] En "Planos", toca "Nuevo plano" sin nombre y otro con nombre "Planta baja".
+       **Esperado**: aparecen "Plano 1" y "Planta baja" con su miniatura; cada uno se abre
+       en su propio editor.
+2. [ ] Renombra y elimina un plano (confirmando). **Esperado**: la lista se actualiza; al
+       sincronizar, el cambio llega al servidor.
+3. [ ] Resumen de la visita. **Esperado**: "2 planos · N elementos".
+4. [ ] Visita con un plano dibujado con la versión anterior de la app. **Esperado**: se ve
+       igual que antes y, al dibujar, se sigue guardando sin perder nada.
+
+**Zoom y formato de plano**
+
+5. [ ] Pellizca para acercar y alejar mucho (de centímetros a cientos de metros) y arrastra
+       con dos dedos. **Esperado**: fluido; la cuadrícula se adapta; los trazos mantienen su
+       grosor en pantalla; la barra de escala cambia (p. ej. "50 cm", "10 m").
+6. [ ] Botones acercar, alejar y "Ver todo el plano". **Esperado**: encuadra todo el contenido.
+7. [ ] Herramienta "Mover vista": arrastrar con un dedo mueve el plano sin dibujar.
+8. [ ] Línea, flecha y cota con el ajuste activo. **Esperado**: los puntos caen en la
+       cuadrícula, los ángulos van de 15 en 15° y arriba aparece la medida ("2,35 m"). La cota
+       deja la medida escrita sobre la línea. Sin ajuste, el trazo sigue al dedo.
+9. [ ] Cada herramienta: lápiz, línea, flecha, rectángulo, círculo, cota, texto y marcador,
+       con distintos colores y grosores. Borrador sobre un elemento: solo se borra ese.
+10. [ ] Empieza un trazo y apoya un segundo dedo. **Esperado**: el trazo se descarta y empieza
+        el pellizco.
+11. [ ] Deshacer y rehacer varias veces. **Esperado**: en orden; un cambio nuevo vacía
+        "Rehacer".
+12. [ ] Gira la pantalla. **Esperado**: no se pierde ni se deforma nada.
+13. [ ] Sal y vuelve a entrar. **Esperado**: el plano se conserva (autoguardado).
+14. [ ] Visita cerrada. **Esperado**: lista y editor de solo lectura; se puede hacer zoom y
+        mover la vista con un dedo.
+
+**Selección y figuras**
+
+15. [ ] Herramienta "Seleccionar": toca un elemento y arrástralo; arrastra en vacío para
+        seleccionar varios. **Esperado**: recuadro azul; se mueven juntos (con ajuste, a pasos
+        de la cuadrícula). Duplicar, borrar y quitar la selección funcionan.
+16. [ ] Selecciona varios elementos → "Guardar como figura" → nombre. **Esperado**: aviso
+        "Figura guardada".
+17. [ ] En otra visita, "Figuras guardadas" → toca la figura. **Esperado**: aparece en el
+        centro de la pantalla, a su tamaño real y seleccionada para moverla.
+18. [ ] Con otro dispositivo del mismo técnico (tras sincronizar). **Esperado**: la figura
+        también está. Eliminarla no cambia los planos donde ya se usó.
 
 ## 10. Teclado sobre formularios y diálogos (Android) — P2
 
@@ -342,6 +376,131 @@ Requisitos: backend migrado (docs/BACKEND.md, 2.2) si se prueba con sincronizaci
        plantilla y se puede seguir llenando.
 8. [ ] Con backend: _form_responses_ tiene una fila por formulario con `template_key`; la
        visita conserva en `form_template_id` la plantilla del **primer** formulario.
+
+## 23. Informe PDF de la visita — P1
+
+Requiere un build con `expo-print` y `expo-sharing` (ver docs/COMPILACION.md §9).
+
+1. [ ] Visita con dos formularios (uno completado), materiales del catálogo y uno
+       personalizado, 3 fotos con marca y un plano con líneas, texto, marcador y cota.
+       Detalle → **Compartir PDF**. **Esperado**: el botón pasa a «Generando PDF...»,
+       queda inactivo y se abre la hoja de compartir del sistema con
+       `Visita_<cliente>_<AAAA-MM-DD>.pdf`.
+2. [ ] Ábrelo (Drive, visor de PDF). **Esperado**: tamaño A4; cabecera con el logo TEINS
+       y «Generado el …»; datos de la visita (cliente, tipo, dirección, estado, técnico,
+       fechas, coordenadas, observaciones); cada formulario con sus secciones y respuestas
+       (Sí/No, fechas largas, números con coma y unidad, selección múltiple separada por
+       comas, «Sin respuesta» en los vacíos); tabla de materiales con «personalizado»;
+       fotos con su marca impresa, pie y número; el plano dibujado igual que en la
+       miniatura de la app.
+3. [ ] Ninguna fila de tabla, foto ni plano queda cortada entre dos páginas.
+4. [ ] Números de página «Página N de M» abajo a la derecha. **Nota**: dependen del motor
+       de impresión (Android System WebView reciente sí; en iOS pueden no aparecer). Si no
+       salen, anótalo pero no es un fallo.
+5. [ ] En **modo avión**: el PDF se genera igual (todo sale del dispositivo) y se puede
+       guardar en «Archivos»/descargas.
+6. [ ] Compártelo por WhatsApp y por correo. **Esperado**: llega como documento PDF con el
+       nombre descriptivo. Tamaño razonable (con 10 fotos, del orden de 1–3 MB).
+7. [ ] Foto cuyo archivo ya no está en el teléfono (p. ej. visita descargada de otro
+       dispositivo): en su lugar aparece «La fotografía no está guardada en este
+       dispositivo…», el resto del informe sale bien.
+8. [ ] Visita con más de 40 fotos: se incluyen las 40 más recientes y una nota indica
+       cuántas se omitieron.
+9. [ ] Título, cliente u observaciones con `<b>`, `&` o comillas: se imprimen tal cual
+       (no cambian el formato).
+10. [ ] Cancelar la hoja de compartir no muestra error; el botón vuelve a «Compartir PDF».
+11. [ ] Visita finalizada (solo lectura): el botón sigue disponible.
+12. [ ] iPad: la hoja de compartir se abre sin cerrarse la app.
+
+## 24. Inventario de bodega — P1 (requiere backend)
+
+Antes: migración `20261122000200_inventario.sql` aplicada y `powersync/sync-config.yaml`
+desplegado (docs/BACKEND.md §2.4). Usuarios: un técnico, uno de oficina y un admin. En el
+_Table Editor_ (o con el admin desde la app, paso 6) pon `min_stock = 100` a «Cable UTP
+Cat6» y deja otro material sin mínimo.
+
+1. [ ] Técnico: Inicio → **Inventario**. **Esperado**: lista de materiales activos con
+       código, nombre y existencias («N metro»); el aviso «Consulta de existencias…»; arriba,
+       los que están **bajo mínimo** con la marca «Bajo mínimo». Las existencias coinciden
+       con `material_stock.on_hand` del servidor.
+2. [ ] «Qué comprar» lista solo los materiales bajo mínimo con «Comprar N … (hay X; mínimo
+       Y)», con N = mínimo − existencias redondeado hacia arriba. Sin ninguno bajo mínimo:
+       «Nada por comprar…».
+3. [ ] Busca por código y por nombre (con y sin tildes) y marca «Solo bajo mínimo».
+4. [ ] Toca un material: detalle con En bodega, Compras, Ajustes, Usado en visitas, Mínimo e
+       historial. El técnico **no** ve «Registrar compra», «Ajuste» ni «Mínimo».
+5. [ ] Oficina: detalle → **Registrar compra**, 50, nota «Factura 1». **Esperado**: vuelve
+       al detalle, el movimiento aparece con «Pendiente de sincronizar» y las existencias
+       **no cambian todavía**. Con conexión, en segundos: la marca desaparece y «En bodega»
+       sube 50 (también en el teléfono del técnico).
+6. [ ] Oficina: **Ajuste** con «0» → error; con «-3» → se guarda y, al sincronizar, baja 3.
+       Admin: **Mínimo** → 12 → el material entra o sale de «Qué comprar». Oficina no ve
+       «Mínimo».
+7. [ ] Técnico: en una visita agrega 10 m de un material del catálogo y un material
+       personalizado. Inventario: el material del catálogo aparece «Pendiente de
+       sincronizar»; al sincronizar, «Usado en visitas» sube 10 y «En bodega» baja 10. El
+       personalizado no aparece en el inventario. Cambia la cantidad a 4 y después quita el
+       material: las existencias se ajustan cada vez (tras sincronizar).
+8. [ ] **Modo avión** (oficina): registra una compra. **Esperado**: se guarda, aviso de
+       cambios sin enviar; al volver la conexión se sube sola y las existencias se
+       actualizan.
+9. [ ] Seguridad: con la sesión de un técnico, inserta un movimiento por la API REST de
+       Supabase. **Esperado**: lo rechaza la RLS (42501) y `material_stock` no cambia. (Si
+       llegara a subirlo la app, quedaría en el aviso de cambios rechazados del inicio.)
+10. [ ] Dos técnicos usan el mismo material en sus visitas: las existencias que ven todos
+        (también oficina) descuentan el uso de **ambos**.
+
+## 25. Asistente (chatbot) — P1
+
+Datos: inventario con un material bajo mínimo (sección 24), visitas de dos clientes y una
+visita con materiales hoy. El asistente con Claude requiere la función `assistant`
+desplegada y los secretos de docs/BACKEND.md §11.
+
+**Asistente básico (gratis, sin IA)**
+
+1. [ ] Inicio → **Asistente**. **Esperado**: mensaje de bienvenida y sugerencias; bajo el
+       título, «Asistente básico · sin IA» si la función no está activada.
+2. [ ] Toca «¿Qué tengo que comprar?». **Esperado**: la misma lista y cantidades que «Qué
+       comprar» del inventario, con coma decimal y unidad, y el botón «Abrir inventario» (abre
+       la pantalla de inventario).
+3. [ ] Escribe «cuanto cabel queda» (con error) y «¿Cuánto CABLE me queda?». **Esperado**:
+       las existencias y el mínimo del cable, iguales a las del inventario.
+4. [ ] «consumo de hoy», «cuánto cable usé este mes», «consumo del 1 al 15 de noviembre».
+       **Esperado**: cantidades que coinciden con los materiales de esas visitas (sin los
+       personalizados).
+5. [ ] «visitas pendientes», «visitas de hoy», «visitas en curso», «visitas de <cliente>»
+       (sin tildes). **Esperado**: solo tus visitas, con su estado.
+6. [ ] «PDF de la visita de <cliente con una sola visita>». **Esperado**: tarjeta con
+       «Compartir PDF»; al tocarla pasa a «Generando PDF...» y se abre la hoja de compartir con
+       el mismo PDF que el botón de la visita.
+7. [ ] «informe de <cliente con varias visitas>». **Esperado**: chips con cada visita; al
+       tocar una aparece su tarjeta «Compartir PDF».
+8. [ ] «¿Cómo tomo una foto?», «¿cómo registro una compra?» (con técnico y con oficina).
+       **Esperado**: pasos numerados que coinciden con la app y la nota del rol.
+9. [ ] «xyz» y «hola». **Esperado**: «No entendí…» con sugerencias; el saludo lista lo que
+       puede hacer.
+10. [ ] **Modo avión** con la función activada: pregunta algo. **Esperado**: aviso
+        «Respondiendo sin conexión con el asistente básico.» y la respuesta del básico. El
+        PDF también se genera sin conexión.
+11. [ ] Modo demo: funciona con los datos de ejemplo (siempre el básico).
+
+**Asistente con Claude (función activada)**
+
+12. [ ] Con `ANTHROPIC_API_KEY` y `ASSISTANT_MODEL=claude-haiku-5-5`, repite 2 a 8 con
+        frases libres («¿me alcanza el cable para dos visitas más?»). **Esperado**: bajo la
+        respuesta, «Asistente con IA (Claude)»; los datos coinciden con el inventario y las
+        visitas (nada inventado).
+13. [ ] Oficina o administración: «visitas pendientes de todos los técnicos». **Esperado**:
+        incluye visitas de otros técnicos con su nombre. Un técnico solo ve las suyas.
+14. [ ] Oficina: «PDF de una visita de otro técnico». **Esperado**: explica que el PDF se
+        genera en el teléfono del técnico; no aparece la tarjeta.
+15. [ ] Pregunta ajena a TEINS («escribe un poema»). **Esperado**: responde que solo ayuda
+        con la app.
+16. [ ] Clave no válida o sin saldo en Anthropic. **Esperado**: aviso «El asistente con IA no
+        respondió…» y respuesta del básico; nada se rompe.
+17. [ ] Cambia `ASSISTANT_MODEL` a `claude-opus-5-5` sin reinstalar la app. **Esperado**: la
+        siguiente pregunta la responde Opus (en los logs de la función).
+18. [ ] Cierra sesión y vuelve a entrar. **Esperado**: la conversación anterior ya no está.
 
 ---
 

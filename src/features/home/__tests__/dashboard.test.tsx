@@ -111,6 +111,15 @@ describe('QuickActions', () => {
     expect(onNewVisit).toHaveBeenCalledTimes(1);
   });
 
+  it('ofrece "Inventario" si se indica la acción', async () => {
+    const onInventory = jest.fn();
+    await render(<QuickActions onMyVisits={jest.fn()} onInventory={onInventory} />);
+
+    await fireEvent.press(screen.getByRole('button', { name: 'Inventario' }));
+
+    expect(onInventory).toHaveBeenCalledTimes(1);
+  });
+
   it('oculta "Nueva visita" para quien no puede crear visitas', async () => {
     await render(<QuickActions onMyVisits={jest.fn()} />);
 

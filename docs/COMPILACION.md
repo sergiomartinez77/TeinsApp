@@ -3,7 +3,7 @@
 Guía paso a paso para compilar TEINS con **EAS Build** (el servicio de compilación
 en la nube de Expo) o en local, pensada para alguien que no ha usado EAS nunca.
 
-La app usa módulos nativos (PowerSync + op-sqlite, Skia, cámara...), así que **no
+La app usa módulos nativos (PowerSync + op-sqlite, Skia, cámara, impresión a PDF...), así que **no
 funciona en Expo Go**: siempre se instala un build propio (_development build_ para
 programar, _preview_ para testers y _production_ para las tiendas).
 
@@ -309,6 +309,14 @@ Para usar `eas submit` hará falta:
 | "No se puede instalar: ya existe un paquete con la misma firma"                | Una variante instalada con otra firma (local vs EAS). Desinstala esa variante y vuelve a instalar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ---
+
+> **Módulos nativos nuevos: informe PDF (`expo-print` y `expo-sharing`).** Desde la
+> versión con «Compartir PDF» en el detalle de la visita, la app incluye estos dos
+> módulos nativos. Un development build anterior **no los contiene** y el botón falla:
+> compila un build nuevo (`npm run build:dev:android`, `npm run android` o el perfil
+> que corresponda) antes de probarlo. No necesitan config plugin ni permisos nuevos (el
+> plugin de `expo-sharing` solo sirve para _recibir_ archivos compartidos, que la app
+> no usa). Pruebas: docs/PRUEBAS_MANUALES.md §23.
 
 ## 10. Limitaciones conocidas de plataforma
 
