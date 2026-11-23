@@ -1,0 +1,30 @@
+diff --git a/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt b/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt
+index 471b340..990422e 100644
+--- a/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt
++++ b/node_modules/expo-sharing/android/src/main/java/expo/modules/sharing/SharingModule.kt
+@@ -36,12 +36,12 @@ class SharingModule : Module() {
+         val mimeType = params.mimeType
+           ?: URLConnection.guessContentTypeFromName(fileToShare.name)
+           ?: "*/*"
+-        val intent = Intent.createChooser(
+-          createSharingIntent(contentUri, mimeType),
+-          params.dialogTitle
+-        )
++        val sharingIntent = createSharingIntent(contentUri, mimeType)
++        val intent = Intent.createChooser(sharingIntent, params.dialogTitle)
++        // TEINS: se concede la lectura a las apps que reciben el archivo (Gmail
++        // lo lee desde otro proceso), no solo al selector de Android.
+         val resInfoList = context.packageManager.queryIntentActivities(
+-          intent,
++          sharingIntent,
+           PackageManager.MATCH_DEFAULT_ONLY
+         )
+         resInfoList.forEach {
+@@ -117,6 +117,7 @@ class SharingModule : Module() {
+   private fun createSharingIntent(uri: Uri, mimeType: String?) =
+     Intent(Intent.ACTION_SEND).apply {
+       putExtra(Intent.EXTRA_STREAM, uri)
++      clipData = android.content.ClipData.newRawUri("", uri)
+       setTypeAndNormalize(mimeType)
+       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+     }

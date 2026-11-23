@@ -54,6 +54,7 @@
     "eslint-plugin-prettier": "^5.5.7",
     "jest": "~30.5.2",
     "jest-expo": "~58.0.15",
+    "patch-package": "^8.0.1",
     "prettier": "^3.10.0",
     "react-dom": "19.3.0",
     "react-test-renderer": "19.3.0",
@@ -79,7 +80,8 @@
     "build:preview:ios": "npx eas-cli@latest build --profile preview --platform ios",
     "build:prod:android": "npx eas-cli@latest build --profile production --platform android",
     "build:prod:ios": "npx eas-cli@latest build --profile production --platform ios",
-    "assistant:guide": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-assistant-guide.mjs"
+    "assistant:guide": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/build-assistant-guide.mjs",
+    "postinstall": "patch-package"
   },
   "private": true,
   "expo": {
