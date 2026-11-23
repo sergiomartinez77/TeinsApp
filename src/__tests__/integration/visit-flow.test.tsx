@@ -257,7 +257,7 @@ it('recorre una visita de principio a fin y después queda cerrada a toda escrit
     { id: annotationId, title: 'Planta baja', format_version: 2, updated_at: at(7).toISOString() },
   ]);
 
-  const { result } = await renderHook(() => useVisitSummary(TECH_A, visitFromRow(storedVisit)));
+  const { result } = await renderHook(() => useVisitSummary(visitFromRow(storedVisit)));
   expect(result.current).toEqual({
     // Varios formularios por visita: ahora se cuentan (antes "Completado · <plantilla>").
     'form-select': '1 formulario · 1 completado',

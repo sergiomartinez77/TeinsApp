@@ -10,7 +10,13 @@ import type { AssistantAction } from '../services/engine';
 export interface AssistantActionsProps {
   actions: readonly AssistantAction[];
   onSuggestion: (message: string) => void;
-  onSelectVisit: (visitId: string, label: string) => void;
+  /** Visita elegida de la lista: su PDF o, con `purpose: 'materials'`, sus materiales. */
+  onSelectVisit: (
+    visitId: string,
+    label: string,
+    purpose?: 'pdf' | 'materials',
+    query?: string,
+  ) => void;
   onOpenInventory: () => void;
   /** Mientras el asistente responde, los chips no envían nada. */
   disabled?: boolean;
@@ -129,8 +135,14 @@ export function AssistantActions({
                 key={`visit-${action.visitId}`}
                 label={action.label}
                 disabled={disabled}
-                accessibilityHint="Prepara el PDF de esta visita"
-                onPress={() => onSelectVisit(action.visitId, action.label)}
+                accessibilityHint={
+                  action.purpose === 'materials'
+                    ? 'Muestra los materiales de esta visita'
+                    : 'Prepara el PDF de esta visita'
+                }
+                onPress={() =>
+                  onSelectVisit(action.visitId, action.label, action.purpose, action.query)
+                }
               />
             ) : action.type === 'suggestion' ? (
               <Chip

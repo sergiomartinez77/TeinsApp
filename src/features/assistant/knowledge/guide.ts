@@ -105,6 +105,12 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
       '«Finalizar visita» no exige tener formularios completados.',
       'Todo funciona sin Internet; los cambios se sincronizan solos al volver la conexión.',
     ],
+    roles: {
+      office:
+        'Oficina ve en «Visitas» las de todos los técnicos. Las de otro técnico dicen «Visita de <técnico>»: se consultan y se comparte su PDF, pero solo su técnico las inicia, finaliza o edita.',
+      admin:
+        'Administración ve en «Visitas» las de todos los técnicos. Las de otro técnico dicen «Visita de <técnico>»: se consultan y se comparte su PDF, pero solo su técnico las inicia, finaliza o edita.',
+    },
   },
   {
     id: 'formularios',
@@ -241,12 +247,15 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
       'Arriba aparecen «Qué comprar» (materiales bajo mínimo con la cantidad sugerida) y luego la lista con las existencias de cada material.',
       'Busca por código o nombre, o marca «Solo bajo mínimo».',
       'Toca un material para ver el detalle: En bodega, Compras, Ajustes, Usado en visitas, Mínimo e historial.',
+      'En el detalle, toca «Uso por visita» para ver en qué visitas se usó (una fila por visita, la más reciente primero, con el total arriba); toca una fila para abrir esa visita.',
       'Administración u oficina: en el detalle toca «Registrar compra» o «Ajuste», escribe la cantidad (en un ajuste puede ser negativa, nunca 0) y una nota opcional.',
       'Administración: en el detalle toca «Mínimo» para fijar o quitar el mínimo de bodega.',
     ],
     notes: [
       'Las existencias las calcula el servidor (compras + ajustes − uso en visitas). Un movimiento nuevo aparece «Pendiente de sincronizar» y las existencias cambian cuando se sincroniza.',
       'La cantidad sugerida es lo que falta para llegar al mínimo, redondeado hacia arriba.',
+      '«Falta conteo inicial»: el material nunca tuvo compras ni ajustes, así que no se sabe cuánto hay (solo cuánto se usó). No aparece como compra sugerida sino en el grupo «Sin conteo inicial»; se corrige registrando un ajuste con lo que hay en bodega.',
+      '«Stock negativo: revisa el conteo»: hay compras o ajustes, pero se usó más de lo que entró; conviene contar y registrar un ajuste.',
     ],
     roles: {
       technician:
@@ -280,6 +289,11 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
       'Se incluyen hasta 40 fotos (las más recientes); una nota indica cuántas se omitieron.',
       'Funciona también con la visita finalizada.',
     ],
+    roles: {
+      technician: 'Como técnico puedes generar el PDF de tus visitas.',
+      office: 'Oficina puede generar el PDF de cualquier visita que tenga en el teléfono.',
+      admin: 'Administración puede generar el PDF de cualquier visita que tenga en el teléfono.',
+    },
   },
   {
     id: 'sincronizacion',
@@ -314,7 +328,7 @@ export const GUIDE_TOPICS: readonly GuideTopic[] = [
     keywords: ['asistente', 'chat', 'chatbot', 'preguntar', 'ayuda', 'que puedes hacer'],
     steps: [
       'En el inicio toca «Asistente».',
-      'Escribe tu pregunta o toca una sugerencia, por ejemplo «¿Qué tengo que comprar?» o «¿Cuánto cable queda?».',
+      'Escribe tu pregunta o toca una sugerencia, por ejemplo «¿Qué tengo que comprar?», «¿Cuánto cable queda?», «¿Cuánto cable usé en la visita de Clínica Sur?» o «¿En qué visitas se usó cable?».',
       'Si la respuesta trae un botón («Compartir PDF», «Abrir inventario»), tócalo para continuar.',
       'Sin Internet responde el asistente básico con los datos guardados en el teléfono.',
     ],

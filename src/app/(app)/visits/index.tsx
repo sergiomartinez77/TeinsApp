@@ -23,7 +23,8 @@ import type { VisitFilter } from '@/features/visits/services/visit.queries';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import { useDebouncedValue } from '@/hooks/useDebouncedValue';
-import { canCreateVisit } from '@/models/user.model';
+import { canCreateVisit, canViewAllVisits } from '@/models/user.model';
+import { visitScopeFor } from '@/models/visit.model';
 import { colors, contentWidths, radius, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 import { userErrorMessage } from '@/utils/result.utils';
@@ -63,7 +64,9 @@ export default function VisitsListScreen() {
   const createRequested = params.create === '1';
   const [dialogOpen, setDialogOpen] = useState(canCreate && createRequested);
 
-  const list = useVisits(user.id, filter, search);
+  const list = useVisits(visitScopeFor(user), filter, search);
+  // Admin y oficina ven todas las visitas del teléfono (de todos los técnicos).
+  const seesAll = canViewAllVisits(user.role);
   const { create } = useVisitActions();
 
   // Se limpia el parámetro para que no reabra el diálogo al volver a esta pantalla.
@@ -89,7 +92,7 @@ export default function VisitsListScreen() {
   return (
     <View style={styles.screen}>
       <AppBar
-        title="Mis visitas"
+        title={seesAll ? 'Visitas' : 'Mis visitas'}
         showBack={false}
         leading={
           <IconButton
@@ -145,7 +148,9 @@ export default function VisitsListScreen() {
         <FlatList
           data={list.visits}
           keyExtractor={(visit) => visit.id}
-          renderItem={({ item }) => <VisitCard visit={item} onPress={openVisit} />}
+          renderItem={({ item }) => (
+            <VisitCard visit={item} onPress={openVisit} currentUserId={user.id} />
+          )}
           ItemSeparatorComponent={Separator}
           ListEmptyComponent={
             <EmptyState icon="assignment" message={empty.message} hint={empty.hint} />

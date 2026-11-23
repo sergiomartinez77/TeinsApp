@@ -13,7 +13,14 @@ import type {
  * cliente de Supabase creado con el token del usuario, así que cada consulta
  * respeta la RLS: el técnico ve sus visitas; oficina y administración, todas.
  * Ninguna escribe nada. `generar_pdf_visita` no genera el PDF: devuelve una
- * acción que la app ejecuta en el teléfono con la API de informes.
+ * acción que la app ejecuta en el teléfono con la API de informes (admin y
+ * oficina tienen todas las visitas en el teléfono: stream visitas_de_oficina).
+ *
+ * Conteo inicial: un material con existencias pero sin compras ni ajustes
+ * (compras = 0 y ajustes = 0) no tiene conteo inicial; su "en bodega" sería
+ * solo el uso en visitas en negativo. Se devuelve `sin_conteo_inicial: true`,
+ * `en_bodega: null` y nunca entra en las sugerencias de compra (misma regla
+ * que la app: `needsInitialCount` en src/models/inventory.model.ts).
  *
  * Los resultados se recortan para no gastar tokens de más.
  */
@@ -40,6 +47,9 @@ const MAX_STOCK_ITEMS = 25;
 const MAX_SUGGESTIONS = 50;
 const MAX_CONSUMPTION_ITEMS = 30;
 const MAX_VISITS = 20;
+const MAX_VISIT_MATERIALS = 200;
+const MAX_USAGE_VISITS = 20;
+const MAX_USAGE_ROWS = 5000;
 const MAX_CATALOG = 2000;
 const MAX_RANGE_VISITS = 2000;
 const ID_CHUNK = 100;
@@ -68,7 +78,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'consultar_stock',
     description:
-      'Existencias actuales de la bodega por material (calculadas en el servidor: compras + ajustes − uso en visitas), con su mínimo. Úsala cuando pregunten cuánto queda o hay de un material o por el stock en general. Sin "busqueda" devuelve primero los materiales bajo mínimo.',
+      'Existencias actuales de la bodega por material (calculadas en el servidor: compras + ajustes − uso en visitas), con su mínimo. Úsala cuando pregunten cuánto queda o hay de un material o por el stock en general. Sin "busqueda" devuelve primero los materiales bajo mínimo. sin_conteo_inicial = nunca tuvo compras ni ajustes: no se sabe cuánto hay (en_bodega null).',
     input_schema: {
       type: 'object',
       properties: {
@@ -84,7 +94,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'sugerencias_compra',
     description:
-      'Materiales bajo su mínimo de bodega con la cantidad sugerida para volver al mínimo (redondeada hacia arriba). Úsala cuando pregunten qué comprar, qué falta o qué está bajo mínimo.',
+      'Materiales bajo su mínimo de bodega con la cantidad sugerida para volver al mínimo (redondeada hacia arriba). Úsala cuando pregunten qué comprar, qué falta o qué está bajo mínimo. Aparte lista los materiales sin conteo inicial, para los que no se puede calcular cuánto comprar.',
     input_schema: { type: 'object', properties: {}, additionalProperties: false },
   },
   {
@@ -147,6 +157,42 @@ export const TOOL_DEFINITIONS = [
       additionalProperties: false,
     },
   },
+  {
+    name: 'materiales_de_visita',
+    description:
+      'Materiales registrados en UNA visita, con cantidad y unidad tal como se guardaron (los personalizados vienen marcados). Úsala para «¿cuánto cable usé en la visita de Pérez?» o «materiales de la visita del colegio». Pasa visit_id (de buscar_visitas) o busqueda (cliente o título); si hay varias coincidencias devuelve la lista para preguntar cuál.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        visit_id: { type: 'string', description: 'Id de la visita (de buscar_visitas).' },
+        busqueda: {
+          type: 'string',
+          description: 'Cliente, título o dirección de la visita, si no tienes el id.',
+        },
+        material: {
+          type: 'string',
+          description: 'Parte del nombre o código del material para filtrar. Opcional.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: 'uso_material_por_visita',
+    description:
+      'En qué visitas se usó un material del catálogo: una fila por visita con su cantidad (sin sumar entre visitas), de la más reciente a la más antigua, y el total. Úsala para «¿en qué visitas se usó cable?».',
+    input_schema: {
+      type: 'object',
+      properties: {
+        material: {
+          type: 'string',
+          description: 'Parte del nombre o del código del material, p. ej. "cable" o "CAB-01".',
+        },
+      },
+      required: ['material'],
+      additionalProperties: false,
+    },
+  },
 ] as const;
 
 export type ToolName = (typeof TOOL_DEFINITIONS)[number]['name'];
@@ -203,6 +249,10 @@ interface StockItem {
   categoria: string | null;
   en_bodega: number | null;
   minimo: number | null;
+  /** Nunca tuvo compras ni ajustes: no se sabe cuánto hay (en_bodega es null). */
+  sin_conteo_inicial: boolean;
+  /** Existencias negativas con movimientos registrados: hay que revisar el conteo. */
+  stock_negativo: boolean;
   bajo_minimo: boolean;
   comprar_sugerido: number | null;
   compras: number | null;
@@ -231,7 +281,10 @@ async function loadStock(db: DbLike): Promise<StockItem[]> {
   const byMaterial = new Map(stock.map((row) => [str(row.material_id), row]));
   return catalog.map((row) => {
     const levels = byMaterial.get(str(row.id));
-    const onHand = levels ? num(levels.on_hand) : null;
+    const purchased = levels ? (num(levels.purchased) ?? 0) : null;
+    const adjusted = levels ? (num(levels.adjusted) ?? 0) : null;
+    const uncounted = levels !== undefined && purchased === 0 && adjusted === 0;
+    const onHand = levels && !uncounted ? num(levels.on_hand) : null;
     const minimum = num(row.min_stock);
     const low = onHand !== null && minimum !== null && onHand < minimum;
     const missing = low ? round3((minimum ?? 0) - (onHand ?? 0)) : 0;
@@ -242,6 +295,8 @@ async function loadStock(db: DbLike): Promise<StockItem[]> {
       categoria: optionalString(row.category),
       en_bodega: onHand,
       minimo: minimum,
+      sin_conteo_inicial: uncounted,
+      stock_negativo: onHand !== null && onHand < 0,
       bajo_minimo: low,
       comprar_sugerido: low && missing > 0 ? Math.ceil(missing) : null,
       compras: levels ? num(levels.purchased) : null,
@@ -257,14 +312,19 @@ async function consultarStock(context: ToolContext, input: Row): Promise<ToolOut
   const items = await loadStock(context.db);
   const matches = search
     ? items.filter((item) => matchesAllWords(search, `${item.nombre} ${item.codigo}`))
-    : [...items].sort((a, b) => Number(b.bajo_minimo) - Number(a.bajo_minimo));
+    : [...items].sort(
+        (a, b) =>
+          Number(b.bajo_minimo) - Number(a.bajo_minimo) ||
+          Number(b.sin_conteo_inicial) - Number(a.sin_conteo_inicial),
+      );
   return ok({
     materiales_activos: items.length,
     bajo_minimo: items.filter((item) => item.bajo_minimo).length,
+    sin_conteo_inicial: items.filter((item) => item.sin_conteo_inicial).length,
     busqueda: search || null,
     coincidencias: matches.length,
     materiales: matches.slice(0, MAX_STOCK_ITEMS),
-    nota: 'en_bodega null = el servidor aún no tiene existencias de ese material. Cantidades en la unidad indicada.',
+    nota: 'en_bodega null con sin_conteo_inicial = nunca se registró una compra ni un ajuste: no se sabe cuánto hay; usado_en_visitas sí es real. Oficina o administración deben registrar un ajuste con lo que hay en bodega. en_bodega null sin esa marca = el servidor aún no tiene existencias de ese material. stock_negativo = se usó más de lo que entró: hay que revisar el conteo. Cantidades en la unidad indicada.',
   });
 }
 
@@ -282,7 +342,20 @@ async function sugerenciasCompra(context: ToolContext): Promise<ToolOutcome> {
       comprar: item.comprar_sugerido,
     })),
     materiales_sin_minimo: items.filter((item) => item.minimo === null).length,
-    nota: 'Los materiales sin mínimo definido no se evalúan.',
+    sin_conteo_inicial: items
+      .filter(
+        (item) =>
+          item.sin_conteo_inicial && (item.minimo !== null || (item.usado_en_visitas ?? 0) !== 0),
+      )
+      .slice(0, MAX_SUGGESTIONS)
+      .map((item) => ({
+        codigo: item.codigo,
+        nombre: item.nombre,
+        unidad: item.unidad,
+        minimo: item.minimo,
+        usado_en_visitas: item.usado_en_visitas,
+      })),
+    nota: 'Los materiales sin mínimo definido no se evalúan. Los de sin_conteo_inicial no tienen compras ni ajustes: no se puede calcular cuánto comprar hasta registrar un ajuste con lo que hay en bodega.',
   });
 }
 
@@ -369,6 +442,9 @@ async function consumoMateriales(context: ToolContext, input: Row): Promise<Tool
 
 // ── Visitas ──────────────────────────────────────────────────────────────────
 
+/** Roles que reciben todas las visitas en el teléfono (como la RLS de lectura). */
+const SEES_ALL_ROLES: ReadonlySet<string> = new Set(['admin', 'office']);
+
 const VISIT_COLUMNS =
   'id, title, client_name, address, visit_type, status, created_at, started_at, completed_at, technician_id';
 
@@ -379,12 +455,12 @@ function visitsQuery(context: ToolContext, state: VisitState, limit: number): Pg
   return query.order('created_at', { ascending: false }).limit(limit);
 }
 
-async function buscarVisitas(context: ToolContext, input: Row): Promise<ToolOutcome> {
-  const rawState = str(input.estado);
-  const state: VisitState = (VISIT_STATES as readonly string[]).includes(rawState)
-    ? (rawState as VisitState)
-    : 'todas';
-  const search = sanitizeSearch(str(input.busqueda));
+/** Visitas que coinciden con la búsqueda (con o sin tildes), las más recientes primero. */
+async function searchVisitRows(
+  context: ToolContext,
+  search: string,
+  state: VisitState,
+): Promise<Row[]> {
   let rows: Row[];
   if (search) {
     const pattern = `*${search}*`;
@@ -405,7 +481,11 @@ async function buscarVisitas(context: ToolContext, input: Row): Promise<ToolOutc
   } else {
     rows = await run(visitsQuery(context, state, MAX_VISITS));
   }
+  return rows;
+}
 
+/** Nombres de los técnicos de las visitas que no son del usuario. */
+async function technicianNames(context: ToolContext, rows: readonly Row[]) {
   const technicianIds = [...new Set(rows.map((row) => str(row.technician_id)).filter(Boolean))];
   const names = new Map<string, string>();
   if (technicianIds.some((id) => id !== context.userId)) {
@@ -416,46 +496,208 @@ async function buscarVisitas(context: ToolContext, input: Row): Promise<ToolOutc
       names.set(str(profile.id), optionalString(profile.full_name) ?? str(profile.email));
     }
   }
+  return names;
+}
 
+/** Resumen de una visita para Claude (con el técnico si no es del usuario). */
+function visitSummary(context: ToolContext, row: Row, names: ReadonlyMap<string, string>) {
+  const technicianId = str(row.technician_id);
+  return {
+    id: str(row.id),
+    titulo: str(row.title),
+    cliente: optionalString(row.client_name),
+    direccion: optionalString(row.address),
+    tipo: str(row.visit_type),
+    estado: STATUS_LABELS[str(row.status)] ?? str(row.status),
+    creada: optionalString(row.created_at),
+    iniciada: optionalString(row.started_at),
+    finalizada: optionalString(row.completed_at),
+    es_del_usuario: technicianId === context.userId,
+    ...(technicianId !== context.userId ? { tecnico: names.get(technicianId) ?? null } : {}),
+  };
+}
+
+async function buscarVisitas(context: ToolContext, input: Row): Promise<ToolOutcome> {
+  const rawState = str(input.estado);
+  const state: VisitState = (VISIT_STATES as readonly string[]).includes(rawState)
+    ? (rawState as VisitState)
+    : 'todas';
+  const search = sanitizeSearch(str(input.busqueda));
+  const rows = await searchVisitRows(context, search, state);
+  const names = await technicianNames(context, rows);
   return ok({
     busqueda: search || null,
     estado: state,
     mostradas: rows.length,
-    visitas: rows.map((row) => {
-      const technicianId = str(row.technician_id);
-      return {
-        id: str(row.id),
-        titulo: str(row.title),
-        cliente: optionalString(row.client_name),
-        direccion: optionalString(row.address),
-        tipo: str(row.visit_type),
-        estado: STATUS_LABELS[str(row.status)] ?? str(row.status),
-        creada: optionalString(row.created_at),
-        iniciada: optionalString(row.started_at),
-        finalizada: optionalString(row.completed_at),
-        es_del_usuario: technicianId === context.userId,
-        ...(technicianId !== context.userId ? { tecnico: names.get(technicianId) ?? null } : {}),
-      };
-    }),
+    visitas: rows.map((row) => visitSummary(context, row, names)),
+  });
+}
+
+const VISIT_ID = /^[0-9a-fA-F-]{8,64}$/;
+
+/** Una visita por id (la RLS decide si el usuario puede verla). */
+async function visitById(context: ToolContext, visitId: string): Promise<Row | null> {
+  const { data, error } = await context.db
+    .from('visits')
+    .select(VISIT_COLUMNS)
+    .eq('id', visitId)
+    .maybeSingle();
+  if (error) throw new ToolError(`Error de la base de datos: ${error.message}`);
+  return typeof data === 'object' && data !== null ? (data as Row) : null;
+}
+
+async function materialesDeVisita(context: ToolContext, input: Row): Promise<ToolOutcome> {
+  const visitId = str(input.visit_id).trim();
+  const search = sanitizeSearch(str(input.busqueda));
+  const materialSearch = optionalString(input.material)?.slice(0, 80) ?? '';
+  let visit: Row | null = null;
+  if (visitId) {
+    if (!VISIT_ID.test(visitId)) {
+      return fail('visit_id no es un id de visita válido. Obtén el id con buscar_visitas.');
+    }
+    visit = await visitById(context, visitId);
+    if (!visit) return fail('No existe esa visita o el usuario no tiene permiso para verla.');
+  } else if (search) {
+    const rows = await searchVisitRows(context, search, 'todas');
+    if (rows.length === 0) {
+      return ok({ encontradas: 0, busqueda: search, nota: 'No hay visitas que coincidan.' });
+    }
+    if (rows.length > 1) {
+      const names = await technicianNames(context, rows);
+      return ok({
+        encontradas: rows.length,
+        busqueda: search,
+        visitas: rows.map((row) => visitSummary(context, row, names)),
+        nota: 'Varias visitas coinciden: pregunta al usuario cuál (cliente, título y fecha) y vuelve a llamar con su visit_id.',
+      });
+    }
+    visit = rows[0] ?? null;
+  } else {
+    return fail('Indica visit_id o busqueda (cliente o título de la visita).');
+  }
+
+  const id = str(visit?.id);
+  const rows = await run(
+    context.db
+      .from('visit_materials')
+      .select('material_id, is_custom, material_code, material_name, unit, quantity, created_at')
+      .eq('visit_id', id)
+      .order('created_at', { ascending: true })
+      .limit(MAX_VISIT_MATERIALS),
+  );
+  const materials = rows.map((row) => ({
+    codigo: optionalString(row.material_code),
+    nombre: str(row.material_name),
+    unidad: str(row.unit),
+    cantidad: round3(num(row.quantity) ?? 0),
+    personalizado: row.is_custom === true || row.is_custom === 1 || row.is_custom === 'true',
+  }));
+  const filtered = materialSearch
+    ? materials.filter((item) =>
+        matchesAllWords(materialSearch, `${item.nombre} ${item.codigo ?? ''}`),
+      )
+    : materials;
+  const names = visit ? await technicianNames(context, [visit]) : new Map<string, string>();
+  return ok({
+    visita: visit ? visitSummary(context, visit, names) : null,
+    material_buscado: materialSearch || null,
+    material_encontrado: materialSearch ? filtered.length > 0 : null,
+    materiales: materialSearch && filtered.length > 0 ? filtered : materials,
+    total_registrados: materials.length,
+    nota: 'Cantidades tal como se registraron en la visita. personalizado = material que no es del catálogo de bodega. Si material_encontrado es false, el material buscado no está en la visita y se listan todos.',
+  });
+}
+
+const visitTime = (row: Row) =>
+  new Date(str(row.completed_at) || str(row.created_at)).getTime() || 0;
+
+async function usoMaterialPorVisita(context: ToolContext, input: Row): Promise<ToolOutcome> {
+  const search = optionalString(input.material)?.slice(0, 80) ?? '';
+  if (!search) return fail('Indica el material (nombre o código).');
+  const catalog = await run(
+    context.db
+      .from('material_catalog')
+      .select('id, code, name, unit')
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+      .limit(MAX_CATALOG),
+  );
+  const exact = catalog.filter(
+    (row) =>
+      normalizeText(str(row.code)).replace(/ /g, '') === normalizeText(search).replace(/ /g, ''),
+  );
+  const matches =
+    exact.length > 0
+      ? exact
+      : catalog.filter((row) => matchesAllWords(search, `${str(row.name)} ${str(row.code)}`));
+  if (matches.length === 0) return ok({ encontrado: false, busqueda: search });
+  if (matches.length > 1) {
+    return ok({
+      encontrado: false,
+      varios: matches.slice(0, 10).map((row) => ({ codigo: str(row.code), nombre: str(row.name) })),
+      nota: 'Varios materiales coinciden: pregunta cuál (o usa su código).',
+    });
+  }
+  const material = matches[0] as Row;
+  const uses = await run(
+    context.db
+      .from('visit_materials')
+      .select('visit_id, quantity')
+      .eq('material_id', str(material.id))
+      .eq('is_custom', false)
+      .limit(MAX_USAGE_ROWS),
+  );
+  const perVisit = new Map<string, number>();
+  for (const row of uses) {
+    const visitId = str(row.visit_id);
+    if (visitId)
+      perVisit.set(visitId, round3((perVisit.get(visitId) ?? 0) + (num(row.quantity) ?? 0)));
+  }
+  const ids = [...perVisit.keys()];
+  const visits: Row[] = [];
+  for (let index = 0; index < ids.length; index += ID_CHUNK) {
+    visits.push(
+      ...(await run(
+        context.db
+          .from('visits')
+          .select(VISIT_COLUMNS)
+          .in('id', ids.slice(index, index + ID_CHUNK)),
+      )),
+    );
+  }
+  visits.sort((a, b) => visitTime(b) - visitTime(a));
+  const shown = visits.slice(0, MAX_USAGE_VISITS);
+  const names = await technicianNames(context, shown);
+  const total = round3(visits.reduce((sum, row) => sum + (perVisit.get(str(row.id)) ?? 0), 0));
+  return ok({
+    encontrado: true,
+    material: {
+      codigo: str(material.code),
+      nombre: str(material.name),
+      unidad: str(material.unit),
+    },
+    visitas_con_uso: visits.length,
+    total,
+    visitas: shown.map((row) => ({
+      ...visitSummary(context, row, names),
+      cantidad: perVisit.get(str(row.id)) ?? 0,
+    })),
+    nota: 'Una fila por visita (cantidad de esa visita, sin sumar entre visitas), de la más reciente a la más antigua. Solo visitas que el usuario puede ver; los materiales personalizados no cuentan.',
   });
 }
 
 async function generarPdfVisita(context: ToolContext, input: Row): Promise<ToolOutcome> {
   const visitId = str(input.visit_id).trim();
-  if (!/^[0-9a-fA-F-]{8,64}$/.test(visitId)) {
+  if (!VISIT_ID.test(visitId)) {
     return fail('visit_id no es un id de visita válido. Obtén el id con buscar_visitas.');
   }
-  const { data, error } = await context.db
-    .from('visits')
-    .select('id, title, client_name, technician_id')
-    .eq('id', visitId)
-    .maybeSingle();
-  if (error) throw new ToolError(`Error de la base de datos: ${error.message}`);
-  const row = typeof data === 'object' && data !== null ? (data as Row) : null;
+  const row = await visitById(context, visitId);
   if (!row) return fail('No existe esa visita o el usuario no tiene permiso para verla.');
-  if (str(row.technician_id) !== context.userId) {
+  // Admin y oficina tienen todas las visitas en el teléfono (stream
+  // visitas_de_oficina); el técnico, solo las suyas.
+  if (str(row.technician_id) !== context.userId && !SEES_ALL_ROLES.has(context.role)) {
     return fail(
-      'El PDF se genera en el teléfono con los datos guardados en él, y en cada teléfono solo están las visitas de su técnico. Esta visita es de otro técnico: el PDF debe generarlo él desde su app (botón «Compartir PDF» de la visita).',
+      'El PDF se genera en el teléfono con los datos guardados en él, y en el teléfono de un técnico solo están sus visitas. Esta visita es de otro técnico: el PDF debe generarlo él (o oficina) desde la app (botón «Compartir PDF» de la visita).',
     );
   }
   const title = str(row.title);
@@ -545,6 +787,10 @@ export async function executeTool(
         return guiaUso(context, args);
       case 'generar_pdf_visita':
         return await generarPdfVisita(context, args);
+      case 'materiales_de_visita':
+        return await materialesDeVisita(context, args);
+      case 'uso_material_por_visita':
+        return await usoMaterialPorVisita(context, args);
       default:
         return fail(`Herramienta desconocida: ${name}.`);
     }

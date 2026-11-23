@@ -14,7 +14,7 @@ import { useVisit } from '@/features/visits/hooks/useVisits';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
-import { isEditable } from '@/models/visit.model';
+import { isOwnVisit, readOnlyVisitMessage, visitScopeFor } from '@/models/visit.model';
 import { colors, contentWidths, isSplitViewWidth, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
@@ -29,7 +29,7 @@ export default function VisitDetailScreen() {
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
-  const { visit, isLoading, hasError } = useVisit(user.id, visitId);
+  const { visit, isLoading, hasError } = useVisit(visitScopeFor(user), visitId);
   const { start, complete } = useVisitActions();
   const report = useVisitReport(visitId);
   const split = isSplitViewWidth(width);
@@ -69,20 +69,26 @@ export default function VisitDetailScreen() {
     );
   }
 
+  // Visita de otro técnico (admin/oficina): se consulta y se comparte su PDF,
+  // pero no se inicia ni se finaliza (solo su técnico trabaja en ella).
+  const own = isOwnVisit(visit, user.id);
+  const readOnlyMessage = readOnlyVisitMessage(visit, user, READ_ONLY_MESSAGE);
   const info = (
     <>
-      {isEditable(visit) ? null : <ReadOnlyNotice message={READ_ONLY_MESSAGE} />}
-      <VisitInfoCard visit={visit} />
+      {readOnlyMessage ? <ReadOnlyNotice message={readOnlyMessage} /> : null}
+      <VisitInfoCard visit={visit} currentUserId={user.id} />
     </>
   );
   const actions = (
     <>
-      <VisitActionBar
-        status={visit.status}
-        onStart={() => start.mutate(visit.id)}
-        onComplete={confirmComplete}
-        isBusy={start.isPending || complete.isPending}
-      />
+      {own ? (
+        <VisitActionBar
+          status={visit.status}
+          onStart={() => start.mutate(visit.id)}
+          onComplete={confirmComplete}
+          isBusy={start.isPending || complete.isPending}
+        />
+      ) : null}
       {/* Informe PDF: se genera en el teléfono, también sin conexión. */}
       <VisitReportButton onPress={report.shareReport} step={report.step} />
     </>

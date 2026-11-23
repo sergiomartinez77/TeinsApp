@@ -225,16 +225,71 @@ idempotente y **no cambia ninguna fila existente** de visitas ni materiales:
   app marca el material como «Pendiente de sincronizar» (no inventa un valor provisional).
 - El **consumo por rango de fechas** (`getConsumption` en
   `src/features/inventory/services/inventory.service.ts`) suma los `visit_materials` de las
-  visitas **que hay en el dispositivo**. El stream `mis_visitas` solo entrega las visitas
-  asignadas al usuario (`technician_id = auth.user_id()`), también a admin y oficina: para
-  un consumo de toda la empresa en la app habría que añadir un stream de todas las visitas
-  para esos roles (no incluido). Las existencias (`material_stock.used`) sí cuentan las
-  visitas de todos los técnicos, porque las calcula el servidor.
+  visitas **que hay en el dispositivo**: el técnico, las suyas (`mis_visitas`); admin y
+  oficina, todas (stream `visitas_de_oficina`, ver 2.5). Las existencias
+  (`material_stock.used`) cuentan siempre las visitas de todos los técnicos, porque las
+  calcula el servidor.
+- **Falta conteo inicial**: un material con existencias pero sin ninguna compra ni ajuste
+  (`purchased = 0` y `adjusted = 0`) no muestra su `on_hand` (sería solo el uso en
+  negativo, p. ej. «−63 metro»): la app muestra «Falta conteo inicial», lo usado en visitas
+  y, a admin/oficina, «Registra un ajuste con lo que hay en bodega». No entra en «Qué
+  comprar» (va en el grupo «Sin conteo inicial»). Con cualquier movimiento ya se muestra el
+  número; si es negativo, «Stock negativo: revisa el conteo». La misma regla aplican el
+  asistente básico y la función `assistant` (`sin_conteo_inicial`).
 - Un cambio de `min_stock` hecho por alguien que ya no es admin no da error: la RLS lo
   ignora (0 filas) y el valor vuelve al del servidor en la siguiente sincronización.
 
 Comprobado en `npm run backend:validate` (sección 19: RLS, cuentas de los triggers,
 personalizados, borrado en cascada, `min_stock`; sección 18: relleno con datos existentes).
+
+### 2.5. Administración y oficina ven todas las visitas en el teléfono (obligatorio redesplegar Sync Streams)
+
+`powersync/sync-config.yaml` tiene un stream nuevo, `visitas_de_oficina`, que entrega a los
+usuarios con perfil **activo** `admin` u `office` **todas** las visitas, sus filas hijas
+(`form_responses`, `visit_materials` con la misma lista de columnas y el
+`CAST(quantity AS real)`, `photos`, `annotations`) y los perfiles (para mostrar el nombre del
+técnico de cada visita). Los técnicos no cambian: siguen recibiendo solo las suyas.
+
+```yaml
+visitas_de_oficina:
+  auto_subscribe: true
+  with:
+    usuario_de_oficina: |
+      SELECT id FROM profiles
+      WHERE id = auth.user_id() AND is_active = true
+        AND (role = 'admin' OR role = 'office')
+  queries:
+    - SELECT * FROM visits WHERE auth.user_id() IN usuario_de_oficina
+    - ...
+```
+
+La condición no depende de la fila: es un único bucket global que PowerSync solo entrega a
+quien cumple la subconsulta sobre `profiles` (sintaxis documentada en
+https://docs.powersync.com/sync/streams/queries — _Using Subqueries_ — y
+https://docs.powersync.com/sync/streams/ctes; es el equivalente de la «parameter query sin
+columnas de salida» de las antiguas Sync Rules). Si cambian el rol o `is_active` del
+perfil, PowerSync lo reevalúa solo. Una visita propia del admin llega por dos streams: se
+guarda una sola fila (mismo id, mismas columnas).
+
+**Despliegue**: no hay migración. Vuelve a pegar `powersync/sync-config.yaml` en _Sync
+Streams_ → **Validate** → **Deploy**, e instala la versión nueva de la app. Si el panel no
+acepta la sintaxis (versión antigua del servicio), avisa antes de cambiarla.
+
+**Permisos (RLS, sin cambios)**: admin y oficina pueden LEER todas las visitas y sus filas
+hijas (`*_select_all_admin_office`), pero solo el técnico de la visita puede escribir
+formularios, materiales, fotos y planos (`private.owns_visit` exige rol `technician`). Por
+eso la app muestra las visitas de otros técnicos como **solo lectura** («Visita de
+<técnico>»): sin iniciar/finalizar ni editar; sí se consulta todo y se genera su PDF.
+Nota: por la misma regla, las filas hijas de visitas creadas por un admin para sí mismo no
+se pueden escribir en el servidor (comportamiento anterior, no cambia aquí).
+
+**Volumen de datos**: un teléfono de admin/oficina descarga todas las visitas y todas sus
+respuestas, materiales, planos y filas de fotos (las imágenes no: se piden con URL firmada
+al verlas). Con cientos de visitas al mes la base local crece en proporción (orden de pocos
+MB por cada mil visitas sin contar imágenes) y la primera sincronización tarda más. Si
+llega a ser un problema, se puede limitar por fecha (p. ej. visitas de los últimos 90 días)
+en ese stream. El informe PDF de una visita ajena no incluye sus fotos si los archivos no
+están en el teléfono (aparece el aviso de foto no disponible).
 
 ## 3. Comprobar el resultado en el panel
 
@@ -368,7 +423,9 @@ La configuración sincroniza, para cada usuario: su perfil, sus visitas, las res
 materiales, fotos y planos (anotaciones) de esas visitas, sus figuras guardadas
 (`annotation_figures`), los tipos de visita, plantillas y
 materiales activos, y el inventario de la bodega (`material_stock` y
-`material_stock_movements`, iguales para todos). Los JSONB (`responses`, `elements`, `sections_json`) llegan como
+`material_stock_movements`, iguales para todos). Administración y oficina reciben además
+todas las visitas con sus filas hijas y los perfiles (stream `visitas_de_oficina`, ver
+2.5). Los JSONB (`responses`, `elements`, `sections_json`) llegan como
 texto JSON y los booleanos como 1/0, que es lo que espera la app.
 
 Con la CLI de PowerSync, el mismo archivo se usa como `powersync/sync-config.yaml`

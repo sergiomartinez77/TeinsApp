@@ -8,7 +8,13 @@ import { QuickActions } from '@/features/home/components/QuickActions';
 import type { UserProfile } from '@/models/user.model';
 import { useAuthStore } from '@/store/auth.store';
 import { currentRoute, resetFakeRouter } from '@/test-utils/fake-router';
-import { catalogRow, materialStockRow, TECH_A, visitRow } from '@/test-utils/fixtures';
+import {
+  catalogRow,
+  materialStockRow,
+  TECH_A,
+  visitMaterialRow,
+  visitRow,
+} from '@/test-utils/fixtures';
 import { setTestDatabase } from '@/test-utils/powersync-react';
 import { createTestDatabase, type TestDatabase } from '@/test-utils/test-database';
 
@@ -246,4 +252,31 @@ it('acceso directo "Asistente" en el inicio', async () => {
   );
   await fireEvent.press(screen.getByLabelText('Asistente'));
   expect(onAssistant).toHaveBeenCalledTimes(1);
+});
+
+it('sin conexión: materiales de una visita; con varias coincidencias se elige y responde', async () => {
+  mockOnline = false;
+  db.insert('visit_materials', [
+    visitMaterialRow({
+      id: 'vm-ups',
+      visit_id: 'v-b',
+      material_id: 'm-cable',
+      material_code: 'CAB-01',
+      material_name: 'Cable UTP',
+      unit: 'metro',
+      quantity: 7.5,
+    }),
+  ]);
+  await renderScreen();
+  await sendText('¿cuánto cable usé en la visita del banco?');
+
+  await waitFor(() => expect(screen.getByText(/Encontré 2 visitas/)).toBeOnTheScreen());
+  const chip = screen.getByRole('button', { name: /Banco Central — UPS/ });
+  expect(chip.props.accessibilityHint).toBe('Muestra los materiales de esta visita');
+  await fireEvent.press(chip);
+
+  await waitFor(() =>
+    expect(screen.getByText(/• Cable UTP \(CAB-01\): 7,5 metro/)).toBeOnTheScreen(),
+  );
+  expect(screen.getByText(/^Materiales de Banco Central — UPS/)).toBeOnTheScreen();
 });

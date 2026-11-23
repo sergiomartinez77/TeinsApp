@@ -227,3 +227,46 @@ describe('inventario (migración 20261122000200)', () => {
     }
   });
 });
+
+describe('sync-config: administración y oficina reciben todas las visitas', () => {
+  /* eslint-disable @typescript-eslint/no-require-imports */
+  const fs: typeof import('node:fs') = require('node:fs');
+  const path: typeof import('node:path') = require('node:path');
+  /* eslint-enable @typescript-eslint/no-require-imports */
+  const root = path.resolve(__dirname, '..', '..', '..');
+  const syncConfig = fs.readFileSync(path.join(root, 'powersync', 'sync-config.yaml'), 'utf8');
+  const stream = (name: string) => {
+    const start = syncConfig.indexOf(`\n  ${name}:\n`);
+    expect(start).toBeGreaterThan(0);
+    const next = syncConfig.slice(start + 1).search(/\n {2}[a-z_]+:\n/);
+    return next < 0 ? syncConfig.slice(start) : syncConfig.slice(start, start + 1 + next);
+  };
+  const visitMaterialsColumns = (text: string) =>
+    /SELECT (id, visit_id, material_id[\s\S]*?)\s+FROM visit_materials/
+      .exec(text)?.[1]
+      ?.replace(/\s+/g, ' ');
+
+  it('el stream visitas_de_oficina solo se entrega a perfiles activos admin u oficina', () => {
+    const office = stream('visitas_de_oficina');
+    expect(office).toContain('auto_subscribe: true');
+    expect(office).toMatch(
+      /SELECT id FROM profiles\s+WHERE id = auth\.user_id\(\) AND is_active = true\s+AND \(role = 'admin' OR role = 'office'\)/,
+    );
+    for (const table of ['visits', 'form_responses', 'photos', 'annotations', 'profiles']) {
+      expect(office).toContain(`SELECT * FROM ${table} WHERE auth.user_id() IN usuario_de_oficina`);
+    }
+    expect(office).toContain('FROM visit_materials WHERE auth.user_id() IN usuario_de_oficina');
+  });
+
+  it('visit_materials llega con las mismas columnas (y el CAST) en los dos streams', () => {
+    const own = visitMaterialsColumns(stream('detalle_de_mis_visitas'));
+    expect(own).toContain('CAST(quantity AS real) AS quantity');
+    expect(visitMaterialsColumns(stream('visitas_de_oficina'))).toBe(own);
+  });
+
+  it('los técnicos siguen recibiendo solo sus visitas', () => {
+    expect(stream('mis_visitas')).toContain(
+      'SELECT * FROM visits WHERE technician_id = auth.user_id()',
+    );
+  });
+});

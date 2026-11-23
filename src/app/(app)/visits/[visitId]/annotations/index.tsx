@@ -26,7 +26,13 @@ import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import { planCountLabel, planTitle, type VisitAnnotation } from '@/models/annotation.model';
-import { isEditable } from '@/models/visit.model';
+import {
+  canEditVisit,
+  isOwnVisit,
+  readOnlyVisitMessage,
+  visitOwnerLabel,
+  visitScopeFor,
+} from '@/models/visit.model';
 import { colors, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES, type Result } from '@/types/errors';
 
@@ -43,7 +49,7 @@ export default function VisitPlansScreen() {
   const { visitId } = useLocalSearchParams<{ visitId: string }>();
   const user = useRequiredUser();
   const isOnline = useConnectivity();
-  const visitQuery = useVisit(user.id, visitId);
+  const visitQuery = useVisit(visitScopeFor(user), visitId);
   const plansQuery = useVisitAnnotations(visitId);
   const [naming, setNaming] = useState<NameRequest | null>(null);
 
@@ -72,7 +78,7 @@ export default function VisitPlansScreen() {
     );
   }
 
-  const editable = isEditable(visit);
+  const editable = canEditVisit(visit, user);
   const titleOf = (plan: VisitAnnotation) => planTitle(plan, annotations.indexOf(plan) + 1);
   const open = (plan: VisitAnnotation) =>
     router.push({
@@ -122,7 +128,7 @@ export default function VisitPlansScreen() {
     return screen(
       <EmptyState
         icon="lock"
-        message="La visita está cerrada"
+        message={isOwnVisit(visit, user.id) ? 'La visita está cerrada' : visitOwnerLabel(visit)}
         hint="No se dibujó ningún plano en esta visita."
       />,
     );
@@ -146,9 +152,11 @@ export default function VisitPlansScreen() {
         ListHeaderComponent={
           annotations.length > 0 ? (
             <AppText variant="bodyMedium" color={colors.textSecondary}>
-              {editable
-                ? 'Toca un plano para dibujar. Puedes tener varios planos en la visita.'
-                : 'La visita está cerrada: los planos son de solo lectura.'}
+              {readOnlyVisitMessage(
+                visit,
+                user,
+                'La visita está cerrada: los planos son de solo lectura.',
+              ) ?? 'Toca un plano para dibujar. Puedes tener varios planos en la visita.'}
             </AppText>
           ) : undefined
         }

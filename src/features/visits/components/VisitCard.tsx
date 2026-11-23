@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, Icon } from '@/components/ui';
-import { hasPendingSync, visitTypeLabel, type Visit } from '@/models/visit.model';
+import { hasPendingSync, isOwnVisit, visitTypeLabel, type Visit } from '@/models/visit.model';
 import { colors, spacing } from '@/theme';
 import { formatRelative } from '@/utils/date.utils';
 
@@ -10,10 +10,16 @@ import { RecordSyncBadge, VisitStatusBadge } from './VisitStatusBadge';
 export interface VisitCardProps {
   visit: Visit;
   onPress: (visitId: string) => void;
+  /** Usuario conectado: en las visitas de otros técnicos se muestra el técnico. */
+  currentUserId?: string;
 }
 
 /** Tarjeta de una visita en el listado. */
-export function VisitCard({ visit, onPress }: VisitCardProps) {
+export function VisitCard({ visit, onPress, currentUserId }: VisitCardProps) {
+  const technician =
+    currentUserId !== undefined && !isOwnVisit(visit, currentUserId)
+      ? `Técnico: ${visit.technicianName ?? 'otro técnico'}`
+      : null;
   return (
     <Card
       onPress={() => onPress(visit.id)}
@@ -31,6 +37,7 @@ export function VisitCard({ visit, onPress }: VisitCardProps) {
       <Detail icon="category" text={visitTypeLabel(visit.visitType)} />
       {visit.clientName ? <Detail icon="business" text={visit.clientName} /> : null}
       {visit.address ? <Detail icon="location-on" text={visit.address} /> : null}
+      {technician ? <Detail icon="person" text={technician} /> : null}
 
       <View style={styles.footer}>
         <AppText variant="bodySmall" style={styles.title}>
@@ -42,7 +49,13 @@ export function VisitCard({ visit, onPress }: VisitCardProps) {
   );
 }
 
-function Detail({ icon, text }: { icon: 'category' | 'business' | 'location-on'; text: string }) {
+function Detail({
+  icon,
+  text,
+}: {
+  icon: 'category' | 'business' | 'location-on' | 'person';
+  text: string;
+}) {
   return (
     <View style={styles.detail}>
       <Icon name={icon} size={16} color={colors.textSecondary} />

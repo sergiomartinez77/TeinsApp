@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -47,6 +48,7 @@ type Panel =
 /** Ruta `/inventory` — existencias de la bodega, "Qué comprar" y movimientos. */
 export default function InventoryScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const user = useRequiredUser();
   const isOnline = useConnectivity();
   const pendingCount = useSyncStore((state) => state.pendingCount);
@@ -131,7 +133,11 @@ export default function InventoryScreen() {
                 </AppText>
               </View>
             ) : null}
-            <PurchaseSuggestions suggestions={inventory.suggestions} onOpen={openDetail} />
+            <PurchaseSuggestions
+              suggestions={inventory.suggestions}
+              withoutInitialCount={inventory.withoutInitialCount}
+              onOpen={openDetail}
+            />
             <Input
               label="Buscar material"
               placeholder="Código o nombre"
@@ -176,6 +182,11 @@ export default function InventoryScreen() {
           onPurchase={(item) => setPanel({ type: 'movement', kind: 'purchase', item })}
           onAdjust={(item) => setPanel({ type: 'movement', kind: 'adjustment', item })}
           onEditMinStock={(item) => setPanel({ type: 'minStock', item })}
+          currentUserId={user.id}
+          onOpenVisit={(visitId) => {
+            setPanel(null);
+            router.push({ pathname: '/visits/[visitId]', params: { visitId } });
+          }}
         />
       ) : null}
 

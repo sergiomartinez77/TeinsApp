@@ -5,22 +5,16 @@ import {
 } from '@/features/assistant/knowledge/guide';
 import {
   getConsumption,
+  getMaterialsWithoutInitialCount,
   getPurchaseSuggestions,
   getStockSummary,
   type InventoryReader,
 } from '@/features/inventory/services/inventory.service';
 import { findVisitsForReport, type ReportDatabase } from '@/features/reports';
-import { buildVisitListQuery } from '@/features/visits/services/visit.queries';
+import { buildVisitByIdQuery, buildVisitListQuery } from '@/features/visits/services/visit.queries';
 import { suggestedPurchaseQuantity, type MaterialStockItem } from '@/models/inventory.model';
 import type { UserRole } from '@/models/user.model';
-import {
-  FINISHED_STATUSES,
-  VISIT_STATUS_LABELS,
-  visitFromRow,
-  type Visit,
-} from '@/models/visit.model';
-import { formatShortDate } from '@/utils/date.utils';
-import { formatQuantity } from '@/utils/number.utils';
+import { FINISHED_STATUSES, visitFromRow, visitScopeFor, type Visit } from '@/models/visit.model';
 
 import {
   DEFAULT_SUGGESTIONS,
@@ -31,15 +25,31 @@ import {
 import { contentWords } from '../text';
 
 import type { Intent, VisitFilterIntent } from './intents';
+import {
+  bullet,
+  LOCAL_MESSAGES,
+  plural,
+  qty,
+  selectAction,
+  visitLabel,
+  visitLine,
+  type Row,
+} from './format';
 import { matchGuideTopic, matchMaterials, matchVisits, type CatalogEntry } from './match';
 import { currentMonth, MONTH_NAMES, parsePeriod } from './periods';
 import {
   ACTIVE_CATALOG_SQL,
-  PENDING_VISITS_COUNT_SQL,
-  PENDING_VISITS_SQL,
-  VISIT_BY_ID_SQL,
-  VISITS_ACTIVE_IN_RANGE_SQL,
+  buildPendingVisitsCountQuery,
+  buildPendingVisitsQuery,
+  buildVisitsActiveInRangeQuery,
 } from './queries';
+import {
+  answerMaterialVisits,
+  answerVisitMaterials,
+  answerVisitMaterialsChoice,
+} from './visit-materials';
+
+export { answerVisitMaterialsChoice, LOCAL_MESSAGES, visitLabel };
 
 /**
  * Respuestas del asistente básico. Cada una sale de las APIs reales de la app
@@ -55,35 +65,11 @@ export interface LocalAnswer {
   readonly actions: readonly AssistantAction[];
 }
 
-type Row = Record<string, unknown>;
-
-export const LOCAL_MESSAGES = {
-  databaseError:
-    'No pude leer los datos guardados en el teléfono. Intenta nuevamente en un momento.',
-  syncNote: 'Datos de la última sincronización con el servidor.',
-  deviceScope: 'Solo cuenta las visitas guardadas en este teléfono.',
-  notUnderstood:
-    'No entendí tu pregunta. Puedo consultar existencias, decirte qué comprar, el consumo de materiales, tus visitas, generar el PDF de una visita o explicarte cómo usar la app.',
-} as const;
-
 const MAX_LIST = 8;
 const MAX_VISIT_CANDIDATES = 300;
 const OPEN_INVENTORY: AssistantAction = { type: 'open_inventory' };
 
-const qty = (value: number, unit: string) => `${formatQuantity(value)} ${unit}`.trim();
-const bullet = (lines: readonly string[]) => lines.map((line) => `• ${line}`).join('\n');
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
-
 // ── Visitas ──────────────────────────────────────────────────────────────────
-
-/** "Cliente — Título (12 nov 2026)" o "Título (12 nov 2026)". */
-export function visitLabel(visit: Visit): string {
-  const date = formatShortDate(visit.completedAt ?? visit.startedAt ?? visit.createdAt);
-  const name = visit.clientName ? `${visit.clientName} — ${visit.title}` : visit.title;
-  return date ? `${name} (${date})` : name;
-}
-
-const visitLine = (visit: Visit) => `${visitLabel(visit)} · ${VISIT_STATUS_LABELS[visit.status]}`;
 
 const shareAction = (visit: Visit): AssistantAction => ({
   type: 'share_pdf',
@@ -91,14 +77,12 @@ const shareAction = (visit: Visit): AssistantAction => ({
   label: visitLabel(visit),
 });
 
-const selectAction = (visit: Visit): AssistantAction => ({
-  type: 'select_visit',
-  visitId: visit.id,
-  label: visitLabel(visit),
-});
-
-async function loadVisits(db: AssistantDatabase, technicianId: string): Promise<Visit[] | null> {
-  const result = await findVisitsForReport(db, { technicianId, limit: MAX_VISIT_CANDIDATES });
+/** Visitas que el usuario ve: el técnico, las suyas; admin y oficina, todas. */
+async function loadVisits(db: AssistantDatabase, scope: string | null): Promise<Visit[] | null> {
+  const result = await findVisitsForReport(db, {
+    technicianId: scope,
+    limit: MAX_VISIT_CANDIDATES,
+  });
   return result.ok ? result.data : null;
 }
 
@@ -109,7 +93,8 @@ export async function answerVisitChoice(
   visitId: string,
 ): Promise<LocalAnswer> {
   try {
-    const row = await db.getOptional<Row>(VISIT_BY_ID_SQL, [visitId, context.user.id]);
+    const query = buildVisitByIdQuery(visitId, visitScopeFor(context.user));
+    const row = await db.getOptional<Row>(query.sql, query.parameters);
     if (!row) {
       return {
         text: 'Esa visita ya no está en este teléfono. Busca otra por cliente o título.',
@@ -131,12 +116,12 @@ async function answerPdf(
   context: AssistantContext,
   words: readonly string[],
 ): Promise<LocalAnswer> {
-  const visits = await loadVisits(db, context.user.id);
+  const visits = await loadVisits(db, visitScopeFor(context.user));
   if (!visits) return { text: LOCAL_MESSAGES.databaseError, actions: [] };
   if (visits.length === 0) {
     return { text: 'No hay visitas guardadas en este teléfono para generar un PDF.', actions: [] };
   }
-  const recent = visits.slice(0, 4).map(selectAction);
+  const recent = visits.slice(0, 4).map((visit) => selectAction(visit));
   if (words.length === 0) {
     return {
       text: '¿De qué visita quieres el PDF? Escribe el cliente o el título (por ejemplo «PDF de la visita de Clínica Sur») o elige una reciente:',
@@ -163,7 +148,7 @@ async function answerPdf(
     text: `Encontré ${matches.length} visitas que coinciden con «${searched}». ¿Cuál quieres?${
       matches.length > shown.length ? ` (muestro las ${shown.length} más recientes)` : ''
     }`,
-    actions: shown.map(selectAction),
+    actions: shown.map((visit) => selectAction(visit)),
   };
 }
 
@@ -185,10 +170,23 @@ const FILTER_TITLES: Readonly<Record<VisitFilterIntent, string>> = {
   all: 'guardadas en este teléfono',
 };
 
-function listVisits(visits: readonly Visit[], title: string, total = visits.length): string {
+/**
+ * Lista de visitas. El técnico habla de las suyas («Tienes…»); admin y
+ * oficina (`scope` null) de todas las del teléfono («Hay…», con el técnico).
+ */
+function listVisits(
+  visits: readonly Visit[],
+  title: string,
+  scope: string | null,
+  userId: string,
+  total = visits.length,
+): string {
   const shown = visits.slice(0, MAX_LIST);
-  const more = total > shown.length ? `\n…y ${total - shown.length} más en «Mis visitas».` : '';
-  return `Tienes ${plural(total, 'visita', 'visitas')} ${title}:\n${bullet(shown.map(visitLine))}${more}`;
+  const screen = scope === null ? '«Visitas»' : '«Mis visitas»';
+  const more = total > shown.length ? `\n…y ${total - shown.length} más en ${screen}.` : '';
+  const subject = scope === null ? 'Hay' : 'Tienes';
+  const lines = shown.map((visit) => visitLine(visit, userId));
+  return `${subject} ${plural(total, 'visita', 'visitas')} ${title}:\n${bullet(lines)}${more}`;
 }
 
 /** Sugerencias "PDF: <cliente>" de las primeras visitas (sin repetir nombres). */
@@ -203,10 +201,13 @@ async function answerVisits(
   filter: VisitFilterIntent,
   words: readonly string[],
 ): Promise<LocalAnswer> {
-  const technicianId = context.user.id;
+  const scope = visitScopeFor(context.user);
+  const userId = context.user.id;
+  const list = (visits: readonly Visit[], title: string, total?: number) =>
+    listVisits(visits, title, scope, userId, total);
   try {
     if (words.length > 0) {
-      const visits = await loadVisits(db, technicianId);
+      const visits = await loadVisits(db, scope);
       if (!visits) return { text: LOCAL_MESSAGES.databaseError, actions: [] };
       const statuses = FILTER_STATUSES[filter];
       const matches = matchVisits(words, visits).filter(
@@ -220,7 +221,7 @@ async function answerVisits(
         };
       }
       return {
-        text: listVisits(matches, `que coinciden con «${searched}»`),
+        text: list(matches, `que coinciden con «${searched}»`),
         actions: pdfSuggestions(matches),
       };
     }
@@ -232,14 +233,8 @@ async function answerVisits(
         context.now.getDate(),
       );
       const to = new Date(from.getTime() + 24 * 60 * 60 * 1000 - 1);
-      const range = [from.toISOString(), to.toISOString()];
-      const rows = await db.getAll<Row>(VISITS_ACTIVE_IN_RANGE_SQL, [
-        technicianId,
-        ...range,
-        ...range,
-        ...range,
-        50,
-      ]);
+      const query = buildVisitsActiveInRangeQuery(scope, from.toISOString(), to.toISOString(), 50);
+      const rows = await db.getAll<Row>(query.sql, query.parameters);
       const visits = rows.map(visitFromRow);
       if (visits.length === 0) {
         return {
@@ -247,13 +242,15 @@ async function answerVisits(
           actions: [suggestion('Visitas pendientes', '¿Qué visitas tengo pendientes?')],
         };
       }
-      return { text: listVisits(visits, FILTER_TITLES.today), actions: pdfSuggestions(visits) };
+      return { text: list(visits, FILTER_TITLES.today), actions: pdfSuggestions(visits) };
     }
 
     if (filter === 'pending' || filter === 'all') {
+      const countQuery = buildPendingVisitsCountQuery(scope);
+      const pendingQuery = buildPendingVisitsQuery(scope, MAX_LIST);
       const [counts, rows] = await Promise.all([
-        db.getOptional<Row>(PENDING_VISITS_COUNT_SQL, [technicianId]),
-        db.getAll<Row>(PENDING_VISITS_SQL, [technicianId, MAX_LIST]),
+        db.getOptional<Row>(countQuery.sql, countQuery.parameters),
+        db.getAll<Row>(pendingQuery.sql, pendingQuery.parameters),
       ]);
       const assigned = Number(counts?.assigned ?? 0);
       const inProgress = Number(counts?.in_progress ?? 0);
@@ -262,27 +259,30 @@ async function answerVisits(
       const summary = `Por hacer: ${plural(inProgress, 'en progreso', 'en progreso')} y ${plural(assigned, 'asignada', 'asignadas')}. Completadas: ${completed}.`;
       if (total === 0) {
         return {
-          text: `No tienes visitas pendientes. ${summary}`,
+          text: `${scope === null ? 'No hay' : 'No tienes'} visitas pendientes. ${summary}`,
           actions: [suggestion('Visitas completadas', 'Visitas completadas')],
         };
       }
       const visits = rows.map(visitFromRow);
       return {
-        text: `${listVisits(visits, FILTER_TITLES.pending, total)}\n${summary}`,
+        text: `${list(visits, FILTER_TITLES.pending, total)}\n${summary}`,
         actions: pdfSuggestions(visits),
       };
     }
 
-    const query = buildVisitListQuery(technicianId, {
+    const query = buildVisitListQuery(scope, {
       filter,
       search: '',
       limit: 50,
     });
     const visits = (await db.getAll<Row>(query.sql, query.parameters)).map(visitFromRow);
     if (visits.length === 0) {
-      return { text: `No tienes visitas ${FILTER_TITLES[filter]}.`, actions: [] };
+      return {
+        text: `${scope === null ? 'No hay' : 'No tienes'} visitas ${FILTER_TITLES[filter]}.`,
+        actions: [],
+      };
     }
-    return { text: listVisits(visits, FILTER_TITLES[filter]), actions: pdfSuggestions(visits) };
+    return { text: list(visits, FILTER_TITLES[filter]), actions: pdfSuggestions(visits) };
   } catch {
     return { text: LOCAL_MESSAGES.databaseError, actions: [] };
   }
@@ -296,10 +296,16 @@ export function stockLine(item: MaterialStockItem): string {
   if (!item.stock) {
     return `${name}: todavía no llegaron sus existencias a este teléfono (se descargan al sincronizar).`;
   }
+  if (item.needsInitialCount) {
+    let uncounted = `${name}: falta el conteo inicial (no hay compras ni ajustes registrados), así que no se sabe cuánto hay en bodega. Usado en visitas: ${qty(item.stock.used, item.unit)}. Oficina o administración deben registrar un ajuste con lo que hay en bodega.`;
+    if (item.hasPending) uncounted += ' Hay cambios de este teléfono aún sin sincronizar.';
+    return uncounted;
+  }
   const minimum =
     item.minStock === null ? 'sin mínimo definido' : `mínimo ${qty(item.minStock, item.unit)}`;
   let line = `${name}: ${qty(item.stock.onHand, item.unit)} en bodega; ${minimum}.`;
   const suggested = suggestedPurchaseQuantity(item);
+  if (item.isNegative) line += ' Stock negativo: revisa el conteo.';
   if (suggested !== null)
     line += ` Está bajo mínimo: conviene comprar ${qty(suggested, item.unit)}.`;
   if (item.hasPending) line += ' Hay cambios de este teléfono aún sin sincronizar.';
@@ -348,10 +354,22 @@ async function answerStock(db: AssistantDatabase, words: readonly string[]): Pro
     }
     const low = items.filter((item) => item.isLow);
     const withoutStock = items.filter((item) => !item.stock).length;
+    const uncounted = items.filter(
+      (item) => item.needsInitialCount && (item.stock?.used ?? 0) !== 0,
+    );
     const lines = [
       `Hay ${plural(items.length, 'material activo', 'materiales activos')} en el catálogo; ${plural(low.length, 'está', 'están')} bajo mínimo.`,
     ];
     if (low.length > 0) lines.push(bullet(low.slice(0, 5).map(stockLine)));
+    if (uncounted.length > 0) {
+      const names = uncounted
+        .slice(0, 5)
+        .map((item) => item.name)
+        .join(', ');
+      lines.push(
+        `${plural(uncounted.length, 'material usado no tiene', 'materiales usados no tienen')} conteo inicial (sin compras ni ajustes): ${names}.`,
+      );
+    }
     if (withoutStock > 0) {
       lines.push(
         `${plural(withoutStock, 'material aún no tiene', 'materiales aún no tienen')} existencias en el teléfono.`,
@@ -374,18 +392,30 @@ async function answerPurchase(
       const materials = matchMaterials(words, await loadCatalog(db));
       if (materials.length > 0) return await stockOfMaterials(db, materials);
     }
-    const [suggestions, items] = await Promise.all([
+    const [suggestions, items, uncounted] = await Promise.all([
       getPurchaseSuggestions(db),
       getStockSummary(db),
+      getMaterialsWithoutInitialCount(db),
     ]);
     const withoutMinimum = items.filter((item) => item.minStock === null).length;
-    const note =
-      withoutMinimum > 0
-        ? `\n${plural(withoutMinimum, 'material no tiene', 'materiales no tienen')} mínimo definido y no se evalúan.`
+    const uncountedLines = uncounted
+      .slice(0, 8)
+      .map(
+        (item) =>
+          `${item.name} (${item.code}): usado en visitas ${qty(item.stock?.used ?? 0, item.unit)}`,
+      );
+    const uncountedNote =
+      uncounted.length > 0
+        ? `\nSin conteo inicial (no se puede calcular cuánto comprar hasta registrar un ajuste con lo que hay en bodega):\n${bullet(uncountedLines)}`
         : '';
+    const note =
+      (withoutMinimum > 0
+        ? `\n${plural(withoutMinimum, 'material no tiene', 'materiales no tienen')} mínimo definido y no se evalúan.`
+        : '') + uncountedNote;
     if (suggestions.length === 0) {
+      const counted = uncounted.length > 0 ? 'con conteo inicial ' : '';
       return {
-        text: `Nada por comprar: ningún material está bajo su mínimo.${note}\n${LOCAL_MESSAGES.syncNote}`,
+        text: `Nada por comprar: ningún material ${counted}está bajo su mínimo.${note}\n${LOCAL_MESSAGES.syncNote}`,
         actions: [OPEN_INVENTORY],
       };
     }
@@ -514,6 +544,8 @@ const HELP_TEXT = [
     'Qué comprar: «¿qué está bajo mínimo?»',
     'Consumo de materiales: «¿cuánto se usó esta semana?» o «del 1 al 15 de noviembre»',
     'Tus visitas: «visitas pendientes», «visitas de hoy», «visitas de Clínica Sur»',
+    'Materiales de una visita: «¿cuánto cable usé en la visita de Clínica Sur?» o «materiales de la última visita»',
+    'En qué visitas se usó un material: «¿en qué visitas se usó cable?»',
     'El PDF de una visita: «PDF de la visita de Clínica Sur»',
     'Cómo usar la app: «¿cómo agrego materiales?»',
   ]),
@@ -551,6 +583,10 @@ export async function answerIntent(
       return answerVisits(db, context, intent.filter, intent.words);
     case 'stock':
       return answerStock(db, intent.words);
+    case 'visit_materials':
+      return answerVisitMaterials(db, context, intent);
+    case 'material_visits':
+      return answerMaterialVisits(db, context, intent.words);
     case 'unknown': {
       if (intent.words.length > 0) {
         try {

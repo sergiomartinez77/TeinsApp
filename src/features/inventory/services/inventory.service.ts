@@ -1,11 +1,14 @@
 import {
   buildPurchaseSuggestions,
+  isRelevantWithoutCount,
   materialConsumptionFromRow,
   materialStockItemFromRow,
+  materialVisitUsageFromRow,
   roundQuantity,
   stockMovementFromRow,
   type MaterialConsumption,
   type MaterialStockItem,
+  type MaterialUsageByVisit,
   type PurchaseSuggestion,
   type StockMovement,
 } from '@/models/inventory.model';
@@ -27,6 +30,8 @@ import {
   buildStockQuery,
   CONSUMPTION_SQL,
   INSERT_STOCK_MOVEMENT_SQL,
+  MATERIAL_USAGE_BY_VISIT_SQL,
+  MATERIAL_USAGE_TOTAL_SQL,
   MOVEMENT_HISTORY_SQL,
   UPDATE_MIN_STOCK_SQL,
 } from './inventory.queries';
@@ -80,7 +85,20 @@ export async function getStockSummary(
   return rows.map(materialStockItemFromRow);
 }
 
-/** Materiales cuyas existencias están por debajo de su mínimo. */
+/**
+ * Materiales sin conteo inicial (nunca tuvieron compras ni ajustes) que
+ * importan para comprar: con mínimo definido o ya usados en visitas. No
+ * entran en "Qué comprar": primero hay que registrar un ajuste con lo que hay.
+ */
+export async function getMaterialsWithoutInitialCount(
+  db: InventoryReader,
+): Promise<MaterialStockItem[]> {
+  const query = buildStockQuery({ onlyWithoutInitialCount: true });
+  const rows = await db.getAll<Record<string, unknown>>(query.sql, query.parameters);
+  return rows.map(materialStockItemFromRow).filter(isRelevantWithoutCount);
+}
+
+/** Materiales cuyas existencias están por debajo de su mínimo (con conteo inicial). */
 export async function getLowStock(db: InventoryReader): Promise<MaterialStockItem[]> {
   const query = buildStockQuery({ onlyLow: true });
   const rows = await db.getAll<Record<string, unknown>>(query.sql, query.parameters);
@@ -110,6 +128,48 @@ export async function getMovementHistory(
 ): Promise<StockMovement[]> {
   const rows = await db.getAll<Record<string, unknown>>(MOVEMENT_HISTORY_SQL, [materialId, limit]);
   return rows.map(stockMovementFromRow);
+}
+
+export interface MaterialUsageOptions {
+  /** Máximo de visitas de la lista (por defecto 50). El total cuenta todas. */
+  limit?: number;
+}
+
+/** Visitas que muestra por defecto "Uso por visita". */
+export const DEFAULT_USAGE_LIMIT = 50;
+
+/**
+ * "Uso por visita" de un material del catálogo: una fila por visita (sin
+ * sumar entre visitas), de la más reciente a la más antigua, y el total de
+ * todas las visitas guardadas en el teléfono. Los personalizados no cuentan.
+ */
+export async function getMaterialUsageByVisit(
+  db: InventoryReader,
+  materialId: string,
+  options: MaterialUsageOptions = {},
+): Promise<MaterialUsageByVisit> {
+  const limit = Math.max(1, Math.floor(options.limit ?? DEFAULT_USAGE_LIMIT));
+  const [rows, totals] = await Promise.all([
+    db.getAll<Record<string, unknown>>(MATERIAL_USAGE_BY_VISIT_SQL, [materialId, limit]),
+    db.getAll<Record<string, unknown>>(MATERIAL_USAGE_TOTAL_SQL, [materialId]),
+  ]);
+  return materialUsageFromRows(materialId, rows, totals[0]);
+}
+
+/** Convierte las filas de las dos consultas de "Uso por visita" (también para el hook reactivo). */
+export function materialUsageFromRows(
+  materialId: string,
+  rows: readonly Record<string, unknown>[],
+  totalRow: Record<string, unknown> | undefined,
+): MaterialUsageByVisit {
+  const total = Number(totalRow?.total ?? 0);
+  const visitCount = Number(totalRow?.visit_count ?? 0);
+  return {
+    materialId,
+    total: roundQuantity(Number.isFinite(total) ? total : 0),
+    visitCount: Number.isFinite(visitCount) ? visitCount : 0,
+    visits: rows.map(materialVisitUsageFromRow),
+  };
 }
 
 export interface ConsumptionRange {

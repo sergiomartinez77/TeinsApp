@@ -9,6 +9,9 @@ import { contentWords, hasAnyWord, hasPhrase, normalizeText, tokenize } from '..
 export type VisitFilterIntent =
   'pending' | 'today' | 'inProgress' | 'assigned' | 'completed' | 'all';
 
+/** Visita nombrada por referencia en vez de por cliente o título. */
+export type VisitReference = 'latest' | 'today' | 'yesterday';
+
 export type Intent =
   | { readonly kind: 'greeting' }
   | { readonly kind: 'help' }
@@ -25,6 +28,19 @@ export type Intent =
       readonly words: readonly string[];
     }
   | { readonly kind: 'stock'; readonly words: readonly string[] }
+  /**
+   * Materiales usados en UNA visita («¿cuánto cable usé en la visita de
+   * Pérez?»). `materialWords`: el material preguntado (vacío = todos);
+   * `visitWords`: cliente o título; `reference`: «última», «de hoy», «de ayer».
+   */
+  | {
+      readonly kind: 'visit_materials';
+      readonly materialWords: readonly string[];
+      readonly visitWords: readonly string[];
+      readonly reference: VisitReference | null;
+    }
+  /** En qué visitas se usó un material («¿en qué visitas se usó cable?»), una por una. */
+  | { readonly kind: 'material_visits'; readonly words: readonly string[] }
   /** No coincide con nada conocido: se intenta como nombre de material. */
   | { readonly kind: 'unknown'; readonly words: readonly string[] };
 
@@ -155,6 +171,54 @@ const STOCK_WORDS = [
   'materiales',
 ];
 const VISIT_WORDS = ['visita', 'visitas', 'trabajo', 'trabajos', 'agenda'];
+/** Verbos de "usar material" además de los de consumo (necesité, llevé, puse, instalé…). */
+const MATERIAL_USE_WORDS = [
+  ...CONSUMPTION_WORDS,
+  'uso',
+  'usa',
+  'usaste',
+  'usar',
+  'necesite',
+  'necesitamos',
+  'necesitaron',
+  'necesitaste',
+  'necesitaba',
+  'requiri',
+  'requirio',
+  'lleve',
+  'llevamos',
+  'llevaron',
+  'puse',
+  'pusimos',
+  'pusieron',
+  'instale',
+  'instalamos',
+  'instalaron',
+  'instalado',
+  'coloque',
+  'colocamos',
+  'colocaron',
+  'cambie',
+  'cambiamos',
+];
+const MATERIAL_NOUNS = ['material', 'materiales', 'insumo', 'insumos', 'repuesto', 'repuestos'];
+const QUANTITY_WORDS = ['cuanto', 'cuanta', 'cuantos', 'cuantas'];
+const LATEST_WORDS = ['ultima', 'ultimo', 'reciente', 'recien'];
+/** Palabras que no son ni el material ni la visita en «materiales de la visita…». */
+const VISIT_MATERIAL_IGNORED = [
+  ...MATERIAL_USE_WORDS,
+  ...MATERIAL_NOUNS,
+  ...QUANTITY_WORDS,
+  ...LATEST_WORDS,
+  'visita',
+  'visitas',
+  'hoy',
+  'ayer',
+  'cuales',
+  'total',
+  'cantidad',
+  'cantidades',
+];
 
 export const VISIT_FILTER_WORDS: Readonly<
   Record<Exclude<VisitFilterIntent, 'all'>, readonly string[]>
@@ -236,6 +300,55 @@ function visitFilter(words: readonly string[], normalized: string): VisitFilterI
 
 const FILTER_IGNORED = Object.values(VISIT_FILTER_WORDS).flat();
 
+const isVisitWord = (word: string) => word === 'visita' || word === 'visitas';
+
+/** ¿Pregunta por material (no por cuántas visitas hay)? */
+function asksAboutMaterial(words: readonly string[]): boolean {
+  if (hasAnyWord(words, MATERIAL_USE_WORDS) || hasAnyWord(words, MATERIAL_NOUNS)) return true;
+  // «cuánto cable…» sí; «cuántas visitas…» no.
+  return words.some(
+    (word, index) => QUANTITY_WORDS.includes(word) && !isVisitWord(words[index + 1] ?? ''),
+  );
+}
+
+const materialPart = (words: readonly string[]) =>
+  contentWords(words, [...INTENT_WORDS, ...VISIT_MATERIAL_IGNORED]);
+
+/**
+ * «¿Cuánto cable necesité en la visita de Pérez?»: lo que va antes de
+ * «visita» es el material y lo que va después, la visita. Si antes no hay
+ * material («en la visita de Pérez, ¿cuánto cable usé?»), se pasa todo y el
+ * manejador separa el material de la visita con el catálogo.
+ */
+function visitMaterialsIntent(words: readonly string[], normalized: string): Intent {
+  const at = words.findIndex(isVisitWord);
+  const before = materialPart(words.slice(0, at));
+  const after = materialPart(words.slice(at + 1));
+  let reference: VisitReference | null = null;
+  if (hasAnyWord(words, LATEST_WORDS)) reference = 'latest';
+  else if (hasPhrase(normalized, 'hoy')) reference = 'today';
+  else if (hasPhrase(normalized, 'ayer')) reference = 'yesterday';
+  return {
+    kind: 'visit_materials',
+    materialWords: before,
+    visitWords: after,
+    reference,
+  };
+}
+
+/** ¿Pregunta por materiales de visitas? Devuelve el intent o `null`. */
+function detectVisitMaterials(words: readonly string[], normalized: string): Intent | null {
+  if (!words.some(isVisitWord) || !asksAboutMaterial(words)) return null;
+  const singularVisit = words.includes('visita');
+  if (singularVisit) return visitMaterialsIntent(words, normalized);
+  // Plural: «¿en qué visitas se usó cable?», «¿en cuántas visitas usamos breaker?».
+  const asksWhich =
+    hasPhrase(normalized, 'que visitas') ||
+    hasPhrase(normalized, 'cuales visitas') ||
+    hasPhrase(normalized, 'cuantas visitas');
+  return asksWhich ? { kind: 'material_visits', words: materialPart(words) } : null;
+}
+
 /** ¿Qué pregunta el usuario? */
 export function detectIntent(text: string): Intent {
   const normalized = normalizeText(text);
@@ -265,6 +378,8 @@ export function detectIntent(text: string): Intent {
   if (OPEN_INVENTORY_PHRASES.some((phrase) => hasPhrase(normalized, phrase))) {
     return { kind: 'open_inventory' };
   }
+  const visitMaterials = detectVisitMaterials(words, normalized);
+  if (visitMaterials) return visitMaterials;
   if (hasAnyWord(words, CONSUMPTION_WORDS)) {
     return { kind: 'consumption', words: contentWords(words, INTENT_WORDS) };
   }

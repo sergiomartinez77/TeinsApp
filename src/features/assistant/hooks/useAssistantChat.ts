@@ -12,6 +12,7 @@ import type { AssistantContext, AssistantEngine } from '../services/engine';
 import { answerWithBestEngine, ENGINE_FAILURE_TEXT } from '../services/engine-selector';
 import {
   answerVisitChoice,
+  answerVisitMaterialsChoice,
   createLocalEngine,
   type AssistantDatabase,
 } from '../services/local-engine';
@@ -42,8 +43,13 @@ export interface AssistantChat {
   /** Motor que se intentará para la próxima pregunta. */
   preferredEngine: 'local' | 'claude';
   send: (text: string) => void;
-  /** El usuario eligió una visita de la lista (para su PDF). */
-  chooseVisit: (visitId: string, label: string) => void;
+  /** El usuario eligió una visita de la lista (para su PDF o sus materiales). */
+  chooseVisit: (
+    visitId: string,
+    label: string,
+    purpose?: 'pdf' | 'materials',
+    query?: string,
+  ) => void;
 }
 
 /** Conversación del asistente: envía preguntas al mejor motor disponible. */
@@ -111,12 +117,20 @@ export function useAssistantChat(): AssistantChat {
   );
 
   const chooseVisit = useCallback(
-    (visitId: string, label: string) => {
+    (visitId: string, label: string, purpose: 'pdf' | 'materials' = 'pdf', query?: string) => {
       const store = useAssistantStore.getState();
       if (store.isSending) return;
-      store.addMessage({ role: 'user', text: `PDF de ${label}`, actions: [] });
+      const materials = purpose === 'materials';
+      store.addMessage({
+        role: 'user',
+        text: materials ? `Materiales de ${label}` : `PDF de ${label}`,
+        actions: [],
+      });
       store.setSending(true);
-      void answerVisitChoice(db, context(), visitId)
+      const answer = materials
+        ? answerVisitMaterialsChoice(db, context(), visitId, query)
+        : answerVisitChoice(db, context(), visitId);
+      void answer
         .then((answer) =>
           useAssistantStore
             .getState()

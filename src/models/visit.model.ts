@@ -2,6 +2,8 @@ import type { IconName } from '@/components/ui/Icon';
 import { colors } from '@/theme';
 import { validationError, type AppError } from '@/types/errors';
 
+import { canViewAllVisits, type UserProfile } from './user.model';
+
 // ── Estado de negocio ────────────────────────────────────────────────────────
 
 /** Estado de negocio de la visita. Independiente del estado de sincronización. */
@@ -128,6 +130,11 @@ export interface Visit {
   readonly completedAt: string | null;
   readonly latitude: number | null;
   readonly longitude: number | null;
+  /**
+   * Nombre (o correo) del técnico asignado, si la consulta lo trae y su perfil
+   * está en el teléfono (admin y oficina reciben los perfiles). `null` si no.
+   */
+  readonly technicianName: string | null;
 }
 
 const text = (value: unknown): string | null =>
@@ -157,12 +164,64 @@ export function visitFromRow(row: Record<string, unknown>): Visit {
     completedAt: text(row.completed_at),
     latitude: numeric(row.latitude),
     longitude: numeric(row.longitude),
+    technicianName: text(
+      typeof row.technician_name === 'string' ? row.technician_name.trim() : null,
+    ),
   };
 }
 
 /** Una visita se puede editar mientras está asignada o en progreso. */
 export function isEditable(visit: Pick<Visit, 'status'>): boolean {
   return visit.status === 'assigned' || visit.status === 'inProgress';
+}
+
+// ── Quién ve y quién edita ───────────────────────────────────────────────────
+
+/**
+ * Visitas que el usuario ve en el teléfono: el técnico, solo las suyas (id
+ * del técnico); administración y oficina, todas (`null`), porque el stream
+ * `visitas_de_oficina` les sincroniza todas las visitas.
+ */
+export function visitScopeFor(user: Pick<UserProfile, 'id' | 'role'>): string | null {
+  return canViewAllVisits(user.role) ? null : user.id;
+}
+
+/** ¿La visita está asignada al usuario? */
+export function isOwnVisit(visit: Pick<Visit, 'technicianId'>, userId: string): boolean {
+  return visit.technicianId === userId;
+}
+
+/**
+ * ¿El usuario puede editar la visita? Solo su técnico y mientras esté
+ * asignada o en progreso. La RLS solo deja escribir formularios, materiales,
+ * fotos y planos en las visitas propias (`private.owns_visit`): admin y
+ * oficina consultan las visitas de otros técnicos, pero no las modifican.
+ */
+export function canEditVisit(
+  visit: Pick<Visit, 'status' | 'technicianId'>,
+  user: Pick<UserProfile, 'id'>,
+): boolean {
+  return isOwnVisit(visit, user.id) && isEditable(visit);
+}
+
+/** "Visita de Ana Pérez" (o "de otro técnico" si su perfil no está en el teléfono). */
+export function visitOwnerLabel(visit: Pick<Visit, 'technicianName'>): string {
+  return `Visita de ${visit.technicianName ?? 'otro técnico'}`;
+}
+
+/**
+ * Aviso de solo lectura: visita de otro técnico (consulta) o visita cerrada
+ * (`closedMessage`). `null` si el usuario puede editarla.
+ */
+export function readOnlyVisitMessage(
+  visit: Pick<Visit, 'status' | 'technicianId' | 'technicianName'>,
+  user: Pick<UserProfile, 'id'>,
+  closedMessage: string,
+): string | null {
+  if (!isOwnVisit(visit, user.id)) {
+    return `${visitOwnerLabel(visit)}: puedes consultarla, pero solo su técnico puede editarla.`;
+  }
+  return isEditable(visit) ? null : closedMessage;
 }
 
 export function hasPendingSync(visit: Pick<Visit, 'syncStatus'>): boolean {

@@ -1,6 +1,11 @@
 import type { AssistantEngine } from '../engine';
 
-import { answerIntent, answerVisitChoice, type AssistantDatabase } from './handlers';
+import {
+  answerIntent,
+  answerVisitChoice,
+  answerVisitMaterialsChoice,
+  type AssistantDatabase,
+} from './handlers';
 import { detectIntent } from './intents';
 
 /**
@@ -18,5 +23,5 @@ export function createLocalEngine(db: AssistantDatabase): AssistantEngine {
   };
 }
 
-export { answerVisitChoice, type AssistantDatabase };
+export { answerVisitChoice, answerVisitMaterialsChoice, type AssistantDatabase };
 export { detectIntent, type Intent } from './intents';

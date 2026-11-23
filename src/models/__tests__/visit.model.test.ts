@@ -175,6 +175,7 @@ describe('visitFromRow', () => {
       completedAt: null,
       latitude: -3.99,
       longitude: -79.2,
+      technicianName: null,
     });
   });
 

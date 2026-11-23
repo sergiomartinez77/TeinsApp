@@ -101,7 +101,7 @@ const inventory: Resolver = (table) => {
 const parse = (content: string) => JSON.parse(content) as Record<string, unknown>;
 
 describe('definiciones', () => {
-  it('seis herramientas con esquema estricto y sin forzar su uso', () => {
+  it('ocho herramientas con esquema estricto y sin forzar su uso', () => {
     expect(TOOL_DEFINITIONS.map((tool) => tool.name)).toEqual([
       'consultar_stock',
       'sugerencias_compra',
@@ -109,6 +109,8 @@ describe('definiciones', () => {
       'buscar_visitas',
       'guia_uso',
       'generar_pdf_visita',
+      'materiales_de_visita',
+      'uso_material_por_visita',
     ]);
     for (const tool of TOOL_DEFINITIONS) {
       expect(tool.input_schema.additionalProperties).toBe(false);
@@ -132,6 +134,8 @@ describe('inventario', () => {
         categoria: 'Redes',
         en_bodega: 49.5,
         minimo: 100,
+        sin_conteo_inicial: false,
+        stock_negativo: false,
         bajo_minimo: true,
         comprar_sugerido: 51,
         compras: 120,
@@ -173,6 +177,70 @@ describe('inventario', () => {
         comprar: 51,
       },
     ]);
+  });
+
+  describe('sin conteo inicial y stock negativo', () => {
+    const catalog: Row[] = [
+      ...CATALOG,
+      {
+        id: 'm5',
+        code: 'ABR-01',
+        name: 'Abrazadera',
+        unit: 'metro',
+        category: null,
+        min_stock: 10,
+      },
+      { id: 'm6', code: 'TOR-01', name: 'Tornillo', unit: 'unidad', category: null, min_stock: 2 },
+      { id: 'm7', code: 'NUE-01', name: 'Nuevo', unit: 'unidad', category: null, min_stock: null },
+    ];
+    const stock: Row[] = [
+      ...STOCK,
+      // Nunca tuvo compras ni ajustes: "−63" es solo el uso en visitas.
+      { material_id: 'm5', purchased: '0', adjusted: '0', used: '63', on_hand: '-63' },
+      // Con movimientos y negativo: inconsistencia.
+      { material_id: 'm6', purchased: 5, adjusted: 0, used: 8, on_hand: -3 },
+      // Sin movimientos ni uso ni mínimo: no importa para comprar.
+      { material_id: 'm7', purchased: 0, adjusted: 0, used: 0, on_hand: 0 },
+    ];
+    const resolver: Resolver = (table) =>
+      table === 'material_catalog' ? catalog : table === 'material_stock' ? stock : [];
+
+    it('consultar_stock: en_bodega null y marca sin_conteo_inicial; negativo marcado', async () => {
+      const { context: ctx } = context(resolver);
+      const result = parse((await executeTool('consultar_stock', {}, ctx)).content);
+      expect(result).toMatchObject({ sin_conteo_inicial: 2, bajo_minimo: 2 });
+      const items = result.materiales as Row[];
+      expect(items.find((item) => item.codigo === 'ABR-01')).toMatchObject({
+        en_bodega: null,
+        sin_conteo_inicial: true,
+        bajo_minimo: false,
+        comprar_sugerido: null,
+        usado_en_visitas: 63,
+      });
+      expect(items.find((item) => item.codigo === 'TOR-01')).toMatchObject({
+        en_bodega: -3,
+        stock_negativo: true,
+        bajo_minimo: true,
+        comprar_sugerido: 5,
+      });
+      expect(String(result.nota)).toContain('sin_conteo_inicial');
+    });
+
+    it('sugerencias_compra no sugiere los sin conteo: los lista aparte', async () => {
+      const { context: ctx } = context(resolver);
+      const result = parse((await executeTool('sugerencias_compra', {}, ctx)).content);
+      const codes = (result.sugerencias as Row[]).map((item) => item.codigo);
+      expect(codes).toEqual(['CAB-01', 'TOR-01']);
+      expect(result.sin_conteo_inicial).toEqual([
+        {
+          codigo: 'ABR-01',
+          nombre: 'Abrazadera',
+          unidad: 'metro',
+          minimo: 10,
+          usado_en_visitas: 63,
+        },
+      ]);
+    });
   });
 
   it('error de la base → resultado de error, sin lanzar', async () => {
@@ -351,8 +419,21 @@ describe('generar_pdf_visita', () => {
     });
   });
 
-  it('visita de otro técnico, inexistente, id no válido o error', async () => {
-    const { context: ctx } = context(byId, { role: 'admin' });
+  it('admin y oficina: también las de otros técnicos (las tienen en el teléfono)', async () => {
+    for (const role of ['admin', 'office']) {
+      const { context: ctx } = context(byId, { role });
+      const outcome = await executeTool('generar_pdf_visita', { visit_id: VISITS[1]?.id }, ctx);
+      expect(outcome.isError).toBe(false);
+      expect(outcome.action).toEqual({
+        type: 'share_pdf',
+        visitId: VISITS[1]?.id,
+        label: 'Banco Central — Tablero',
+      });
+    }
+  });
+
+  it('técnico: visita de otro técnico, inexistente, id no válido o error', async () => {
+    const { context: ctx } = context(byId);
     const other = await executeTool('generar_pdf_visita', { visit_id: VISITS[1]?.id }, ctx);
     expect(other).toMatchObject({ isError: true });
     expect(other.action).toBeUndefined();
@@ -394,6 +475,184 @@ describe('guia_uso', () => {
     const { context: ctx } = context(() => []);
     expect((await executeTool('borrar_todo', {}, ctx)).isError).toBe(true);
     expect((await executeTool('guia_uso', null, ctx)).isError).toBe(false);
+  });
+});
+
+describe('materiales_de_visita', () => {
+  const MATERIALS: Row[] = [
+    {
+      visit_id: VISITS[0]?.id,
+      material_id: 'm1',
+      is_custom: false,
+      material_code: 'CAB-01',
+      material_name: 'Cable UTP Cat6',
+      unit: 'metro',
+      quantity: '12.5',
+      created_at: '2026-11-22T13:10:00Z',
+    },
+    {
+      visit_id: VISITS[0]?.id,
+      material_id: null,
+      is_custom: true,
+      material_code: null,
+      material_name: 'Abrazadera especial',
+      unit: 'unidad',
+      quantity: 4,
+      created_at: '2026-11-22T13:20:00Z',
+    },
+  ];
+  const resolver: Resolver = (table, calls) => {
+    if (table === 'visits') {
+      const id = eqValue(calls, 'id');
+      if (id) return VISITS.filter((visit) => visit.id === id);
+      return VISITS;
+    }
+    if (table === 'visit_materials') {
+      return MATERIALS.filter((row) => row.visit_id === eqValue(calls, 'visit_id'));
+    }
+    if (table === 'profiles') return [{ id: OTHER, full_name: 'Luis Gómez', email: 'l@t.com' }];
+    return [];
+  };
+
+  it('por id: todos los materiales con unidad; los personalizados marcados', async () => {
+    const { db, context: ctx } = context(resolver);
+    const outcome = await executeTool('materiales_de_visita', { visit_id: VISITS[0]?.id }, ctx);
+    expect(outcome.isError).toBe(false);
+    const result = parse(outcome.content);
+    expect(result.visita).toMatchObject({ titulo: 'Revisión de red', es_del_usuario: true });
+    expect(result.materiales).toEqual([
+      {
+        codigo: 'CAB-01',
+        nombre: 'Cable UTP Cat6',
+        unidad: 'metro',
+        cantidad: 12.5,
+        personalizado: false,
+      },
+      {
+        codigo: null,
+        nombre: 'Abrazadera especial',
+        unidad: 'unidad',
+        cantidad: 4,
+        personalizado: true,
+      },
+    ]);
+    const materialCalls = db.log.find((entry) => entry.table === 'visit_materials')?.calls ?? [];
+    expect(eqValue(materialCalls, 'visit_id')).toBe(VISITS[0]?.id);
+  });
+
+  it('filtra por material sin tildes; si no está, lo dice y lista todos', async () => {
+    const { context: ctx } = context(resolver);
+    const cable = parse(
+      (
+        await executeTool(
+          'materiales_de_visita',
+          { visit_id: VISITS[0]?.id, material: 'CABLE' },
+          ctx,
+        )
+      ).content,
+    );
+    expect(cable).toMatchObject({ material_encontrado: true, total_registrados: 2 });
+    expect((cable.materiales as Row[]).map((item) => item.nombre)).toEqual(['Cable UTP Cat6']);
+    const breaker = parse(
+      (
+        await executeTool(
+          'materiales_de_visita',
+          { visit_id: VISITS[0]?.id, material: 'breaker' },
+          ctx,
+        )
+      ).content,
+    );
+    expect(breaker).toMatchObject({ material_encontrado: false });
+    expect(breaker.materiales as Row[]).toHaveLength(2);
+  });
+
+  it('por búsqueda: una visita, varias (para preguntar) o ninguna', async () => {
+    const one = context((table, calls) =>
+      table === 'visits' ? VISITS.slice(0, 1) : resolver(table, calls),
+    );
+    const single = parse(
+      (await executeTool('materiales_de_visita', { busqueda: 'Ñandú' }, one.context)).content,
+    );
+    expect(single.visita).toMatchObject({ cliente: 'Clínica Ñandú' });
+
+    const many = context(resolver, { role: 'office' });
+    const several = parse(
+      (await executeTool('materiales_de_visita', { busqueda: 'visita' }, many.context)).content,
+    );
+    expect(several).toMatchObject({ encontradas: 2 });
+    expect(several.visitas).toEqual([
+      expect.objectContaining({ id: VISITS[0]?.id }),
+      expect.objectContaining({ id: VISITS[1]?.id, tecnico: 'Luis Gómez' }),
+    ]);
+    expect(String(several.nota)).toContain('pregunta');
+
+    const none = context(() => []);
+    expect(
+      parse(
+        (await executeTool('materiales_de_visita', { busqueda: 'nada' }, none.context)).content,
+      ),
+    ).toMatchObject({ encontradas: 0 });
+  });
+
+  it('sin datos, id no válido o visita que la RLS no deja ver', async () => {
+    const { context: ctx } = context(resolver);
+    expect((await executeTool('materiales_de_visita', {}, ctx)).content).toContain('Indica');
+    expect(
+      (await executeTool('materiales_de_visita', { visit_id: 'x; drop' }, ctx)).content,
+    ).toContain('no es un id');
+    expect(
+      (await executeTool('materiales_de_visita', { visit_id: 'cccccccc-0000' }, ctx)).content,
+    ).toContain('No existe');
+  });
+});
+
+describe('uso_material_por_visita', () => {
+  const USES: Row[] = [
+    { visit_id: VISITS[0]?.id, quantity: '10' },
+    { visit_id: VISITS[0]?.id, quantity: '2.5' },
+    { visit_id: VISITS[1]?.id, quantity: 30 },
+  ];
+  const resolver: Resolver = (table, calls) => {
+    if (table === 'material_catalog') return CATALOG;
+    if (table === 'visit_materials') return eqValue(calls, 'material_id') === 'm1' ? USES : [];
+    if (table === 'visits') return [...VISITS].reverse();
+    if (table === 'profiles') return [{ id: OTHER, full_name: 'Luis Gómez', email: 'l@t.com' }];
+    return [];
+  };
+
+  it('una fila por visita (sin sumar entre visitas), la más reciente primero', async () => {
+    const { db, context: ctx } = context(resolver, { role: 'admin' });
+    const result = parse(
+      (await executeTool('uso_material_por_visita', { material: 'cable utp' }, ctx)).content,
+    );
+    expect(result).toMatchObject({
+      encontrado: true,
+      material: { codigo: 'CAB-01', nombre: 'Cable UTP Cat6', unidad: 'metro' },
+      visitas_con_uso: 2,
+      total: 42.5,
+    });
+    expect(result.visitas).toEqual([
+      expect.objectContaining({ titulo: 'Revisión de red', cantidad: 12.5 }),
+      expect.objectContaining({ titulo: 'Tablero', cantidad: 30, tecnico: 'Luis Gómez' }),
+    ]);
+    const uses = db.log.find((entry) => entry.table === 'visit_materials')?.calls ?? [];
+    expect(eqValue(uses, 'is_custom')).toBe(false);
+  });
+
+  it('código exacto, varios materiales, ninguno o sin material', async () => {
+    const { context: ctx } = context(resolver);
+    expect(
+      parse((await executeTool('uso_material_por_visita', { material: 'rj-45' }, ctx)).content),
+    ).toMatchObject({ encontrado: true, visitas_con_uso: 0, total: 0 });
+    const several = parse(
+      (await executeTool('uso_material_por_visita', { material: '01' }, ctx)).content,
+    );
+    expect(several).toMatchObject({ encontrado: false });
+    expect((several.varios as Row[]).length).toBeGreaterThan(1);
+    expect(
+      parse((await executeTool('uso_material_por_visita', { material: 'zzz' }, ctx)).content),
+    ).toMatchObject({ encontrado: false, busqueda: 'zzz' });
+    expect((await executeTool('uso_material_por_visita', {}, ctx)).isError).toBe(true);
   });
 });
 

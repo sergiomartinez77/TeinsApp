@@ -1,5 +1,7 @@
 import { formatQuantity } from '@/utils/number.utils';
 
+import { parseVisitStatus, type VisitStatus } from './visit.model';
+
 /**
  * Inventario de la bodega (una sola bodega de la empresa).
  *
@@ -40,7 +42,19 @@ export interface MaterialStockItem {
   readonly minStock: number | null;
   /** `null` = todavía no llegaron las existencias del servidor a este dispositivo. */
   readonly stock: StockLevels | null;
-  /** Existencias por debajo del mínimo (solo si se conocen ambos valores). */
+  /**
+   * Sin conteo inicial: el servidor tiene existencias pero ninguna compra ni
+   * ajuste (compras = 0 y ajustes = 0). Su "en bodega" solo refleja el uso en
+   * visitas (p. ej. −63): no se muestra como existencia ni se sugiere comprar
+   * hasta que oficina registre un ajuste con lo que hay en bodega.
+   */
+  readonly needsInitialCount: boolean;
+  /**
+   * Existencias negativas con movimientos registrados: es una inconsistencia
+   * (se usó más de lo que entró) y hay que revisar el conteo.
+   */
+  readonly isNegative: boolean;
+  /** Existencias por debajo del mínimo (solo si se conocen ambos valores y hay conteo inicial). */
   readonly isLow: boolean;
   /** Compras/ajustes registrados aquí que aún no llegaron al servidor. */
   readonly pendingMovements: number;
@@ -79,6 +93,32 @@ export interface MaterialConsumption {
   readonly quantity: number;
   /** Visitas distintas en las que se usó. */
   readonly visitCount: number;
+}
+
+/** Uso de un material del catálogo en UNA visita (cada visita por separado, sin sumar entre visitas). */
+export interface MaterialVisitUsage {
+  readonly visitId: string;
+  readonly title: string;
+  readonly clientName: string | null;
+  readonly status: VisitStatus;
+  /** Fecha de la visita: `completed_at` o, si no terminó, `created_at`. */
+  readonly date: string;
+  readonly technicianId: string;
+  /** Nombre (o correo) del técnico si su perfil está en el teléfono. */
+  readonly technicianName: string | null;
+  /** Cantidad registrada en esa visita (si se agregó en varias líneas, su suma en la visita). */
+  readonly quantity: number;
+  readonly unit: string;
+}
+
+/** Uso por visita de un material, con el total de TODAS las visitas del teléfono. */
+export interface MaterialUsageByVisit {
+  readonly materialId: string;
+  /** Suma de todas las visitas del teléfono (aunque la lista esté recortada). */
+  readonly total: number;
+  readonly visitCount: number;
+  /** Visitas, de la más reciente a la más antigua (hasta el límite pedido). */
+  readonly visits: readonly MaterialVisitUsage[];
 }
 
 // ── Conversión desde SQLite ──────────────────────────────────────────────────
@@ -131,6 +171,7 @@ export function materialStockItemFromRow(row: Record<string, unknown>): Material
   const minStock = optionalNumber(row.min_stock);
   const pendingMovements = toNumber(row.pending_movements);
   const pendingUses = toNumber(row.pending_uses);
+  const uncounted = needsInitialCount(stock);
 
   return {
     materialId: text(row.material_id),
@@ -140,7 +181,9 @@ export function materialStockItemFromRow(row: Record<string, unknown>): Material
     category: optionalText(row.category),
     minStock,
     stock,
-    isLow: isBelowMinimum(stock, minStock),
+    needsInitialCount: uncounted,
+    isNegative: !uncounted && stock !== null && stock.onHand < 0,
+    isLow: !uncounted && isBelowMinimum(stock, minStock),
     pendingMovements,
     pendingUses,
     hasPending: pendingMovements + pendingUses > 0,
@@ -171,7 +214,38 @@ export function materialConsumptionFromRow(row: Record<string, unknown>): Materi
   };
 }
 
+export function materialVisitUsageFromRow(row: Record<string, unknown>): MaterialVisitUsage {
+  return {
+    visitId: text(row.visit_id),
+    title: text(row.title),
+    clientName: optionalText(row.client_name),
+    status: parseVisitStatus(row.status),
+    date: text(row.visit_date),
+    technicianId: text(row.technician_id),
+    technicianName: optionalText(row.technician_name),
+    quantity: roundQuantity(toNumber(row.quantity)),
+    unit: text(row.unit),
+  };
+}
+
 // ── Reglas ───────────────────────────────────────────────────────────────────
+
+/**
+ * ¿Falta el conteo inicial? Existencias conocidas sin ninguna compra ni ajuste
+ * (nunca hubo movimientos de bodega): lo que dice "en bodega" es solo el uso
+ * en visitas con signo negativo, no una existencia real.
+ */
+export function needsInitialCount(stock: StockLevels | null): boolean {
+  return stock !== null && stock.purchased === 0 && stock.adjusted === 0;
+}
+
+/**
+ * Materiales sin conteo inicial que importan para comprar: tienen mínimo
+ * definido o ya se usaron en visitas (los demás ni se usan ni se vigilan).
+ */
+export function isRelevantWithoutCount(item: MaterialStockItem): boolean {
+  return item.needsInitialCount && (item.minStock !== null || (item.stock?.used ?? 0) !== 0);
+}
 
 /** Bajo mínimo: existencias conocidas y estrictamente menores que el mínimo. */
 export function isBelowMinimum(stock: StockLevels | null, minStock: number | null): boolean {

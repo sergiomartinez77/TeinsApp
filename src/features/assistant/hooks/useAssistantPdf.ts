@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { generateVisitReportPdf, shareVisitReport, type ReportDatabase } from '@/features/reports';
 import type { VisitReportStep } from '@/features/reports/hooks/useVisitReport';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
+import { visitScopeFor } from '@/models/visit.model';
 import { settleResult } from '@/utils/result.utils';
 
 export interface AssistantPdfState {
@@ -34,8 +35,9 @@ export function useAssistantPdf(visitId: string): AssistantPdfState {
     setStep('generating');
     void (async () => {
       const file = await settleResult(
-        generateVisitReportPdf(db, user.id, visitId, {
+        generateVisitReportPdf(db, visitScopeFor(user), visitId, {
           technicianName: user.fullName ?? (user.email || null),
+          currentUserId: user.id,
         }),
       );
       if (!file.ok) {

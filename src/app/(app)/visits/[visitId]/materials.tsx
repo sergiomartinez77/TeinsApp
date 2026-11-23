@@ -24,7 +24,7 @@ import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import type { VisitMaterial } from '@/models/material.model';
-import { isEditable } from '@/models/visit.model';
+import { canEditVisit, readOnlyVisitMessage, visitScopeFor } from '@/models/visit.model';
 import { colors, contentWidths, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 import { userErrorMessage } from '@/utils/result.utils';
@@ -38,7 +38,7 @@ export default function VisitMaterialsScreen() {
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
-  const visitQuery = useVisit(user.id, visitId);
+  const visitQuery = useVisit(visitScopeFor(user), visitId);
   const list = useVisitMaterials(visitId);
   const { add, addCustom, update, remove, isBusy } = useMaterialActions(visitId);
 
@@ -79,7 +79,8 @@ export default function VisitMaterialsScreen() {
     );
   }
 
-  const readOnly = !isEditable(visit);
+  const readOnly = !canEditVisit(visit, user);
+  const readOnlyMessage = readOnlyVisitMessage(visit, user, READ_ONLY_MESSAGE);
 
   const closeSheet = () => {
     setSheetOpen(false);
@@ -115,7 +116,7 @@ export default function VisitMaterialsScreen() {
         ListHeaderComponent={
           readOnly || list.summary.count > 0 ? (
             <View style={styles.header}>
-              {readOnly ? <ReadOnlyNotice message={READ_ONLY_MESSAGE} /> : null}
+              {readOnlyMessage ? <ReadOnlyNotice message={readOnlyMessage} /> : null}
               <MaterialsSummary summary={list.summary} />
             </View>
           ) : undefined

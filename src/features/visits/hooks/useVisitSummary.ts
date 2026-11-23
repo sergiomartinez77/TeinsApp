@@ -25,14 +25,15 @@ const toCount = (value: unknown): number => {
  * consultas reactivas de cada sección: el texto se actualiza solo. Si una
  * consulta falla, solo su sección muestra "No disponible".
  */
-export function useVisitSummary(technicianId: string, visit: Visit): SectionStatuses {
+export function useVisitSummary(visit: Visit): SectionStatuses {
   const forms = useVisitFormResponses(visit.id);
   const materials = useVisitMaterials(visit.id);
   const plans = useVisitAnnotations(visit.id);
   // Solo se cuentan las fotos: no hace falta cargar las filas.
   const photoStats = useQuery<{ total: unknown; pending: unknown }>(VISIT_PHOTO_STATS_SQL, [
     visit.id,
-    technicianId,
+    // El técnico de la visita (también cuando admin u oficina consultan una ajena).
+    visit.technicianId,
   ]);
 
   const statsRow = photoStats.data[0];

@@ -14,6 +14,7 @@ import { formatDateTime } from '@/utils/date.utils';
 
 import { useMaterialStock } from '../hooks/useInventory';
 
+import { MaterialUsageList } from './MaterialUsageList';
 import { STOCK_LABELS } from './StockListTile';
 
 export interface MaterialStockDialogProps {
@@ -26,6 +27,10 @@ export interface MaterialStockDialogProps {
   onPurchase: (item: MaterialStockItem) => void;
   onAdjust: (item: MaterialStockItem) => void;
   onEditMinStock: (item: MaterialStockItem) => void;
+  /** Abre una visita desde "Uso por visita". */
+  onOpenVisit: (visitId: string) => void;
+  /** Id del usuario conectado (para mostrar el técnico en visitas ajenas). */
+  currentUserId: string;
 }
 
 export const MATERIAL_STOCK_MESSAGES = {
@@ -35,6 +40,10 @@ export const MATERIAL_STOCK_MESSAGES = {
     'Hay cambios de este dispositivo que aún no llegan al servidor: las existencias mostradas todavía no los incluyen.',
   noData:
     'Las existencias de este material aún no llegaron a este dispositivo. Se mostrarán al sincronizar.',
+  noInitialCountManager: 'Registra un ajuste con lo que hay en bodega.',
+  noInitialCountViewer:
+    'Aún no hay compras ni ajustes registrados: oficina debe registrar el conteo de bodega.',
+  negative: 'Se usó más de lo que entró: revisa el conteo y registra un ajuste.',
 } as const;
 
 function Row({ label, value, strong }: { label: string; value: string; strong?: boolean }) {
@@ -78,6 +87,8 @@ export function MaterialStockDialog({
   onPurchase,
   onAdjust,
   onEditMinStock,
+  onOpenVisit,
+  currentUserId,
 }: MaterialStockDialogProps) {
   const { item, movements, isLoading, hasError } = useMaterialStock(materialId);
   const title = item?.name ?? 'Material';
@@ -135,13 +146,39 @@ export function MaterialStockDialog({
           {item.isLow ? (
             <Badge label={STOCK_LABELS.low} color={colors.error} icon="warning" />
           ) : null}
-          {item.stock ? (
+          {item.stock && item.needsInitialCount ? (
+            <View style={styles.levels} testID="no-initial-count">
+              <Row label="En bodega" value={STOCK_LABELS.noInitialCount} strong />
+              <AppText variant="bodySmall" color={colors.warning} role="status">
+                {canManage
+                  ? MATERIAL_STOCK_MESSAGES.noInitialCountManager
+                  : MATERIAL_STOCK_MESSAGES.noInitialCountViewer}
+              </AppText>
+              <Row
+                label="Usado en visitas"
+                value={formatQuantityWithUnit(item.stock.used, item.unit)}
+              />
+            </View>
+          ) : item.stock ? (
             <View style={styles.levels}>
               <Row
                 label="En bodega"
                 value={formatQuantityWithUnit(item.stock.onHand, item.unit)}
                 strong
               />
+              {item.isNegative ? (
+                <>
+                  <Badge
+                    label={STOCK_LABELS.negative}
+                    color={colors.error}
+                    icon="error-outline"
+                    style={styles.badge}
+                  />
+                  <AppText variant="bodySmall" color={colors.error}>
+                    {MATERIAL_STOCK_MESSAGES.negative}
+                  </AppText>
+                </>
+              ) : null}
               <Row
                 label="Compras"
                 value={formatQuantityWithUnit(item.stock.purchased, item.unit)}
@@ -182,6 +219,13 @@ export function MaterialStockDialog({
               <MovementRow key={movement.id} movement={movement} unit={item.unit} />
             ))
           )}
+
+          <MaterialUsageList
+            materialId={item.materialId}
+            unit={item.unit}
+            onOpenVisit={onOpenVisit}
+            currentUserId={currentUserId}
+          />
         </>
       ) : null}
     </Dialog>
@@ -191,6 +235,9 @@ export function MaterialStockDialog({
 const styles = StyleSheet.create({
   levels: {
     gap: spacing.xs,
+  },
+  badge: {
+    alignSelf: 'flex-start',
   },
   row: {
     flexDirection: 'row',

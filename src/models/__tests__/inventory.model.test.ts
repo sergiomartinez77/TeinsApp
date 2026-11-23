@@ -39,6 +39,8 @@ describe('materialStockItemFromRow', () => {
       category: 'Cableado',
       minStock: 20,
       stock: { purchased: 30, adjusted: -2, used: 15.5, onHand: 12.5 },
+      needsInitialCount: false,
+      isNegative: false,
       isLow: true,
       pendingMovements: 0,
       pendingUses: 0,

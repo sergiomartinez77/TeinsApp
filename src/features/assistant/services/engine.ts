@@ -21,8 +21,18 @@ export type AssistantAction =
   | { readonly type: 'share_pdf'; readonly visitId: string; readonly label: string }
   /** Ir a la pantalla de inventario. */
   | { readonly type: 'open_inventory' }
-  /** Elegir una visita cuando la búsqueda dio varias (pide su PDF). */
-  | { readonly type: 'select_visit'; readonly visitId: string; readonly label: string }
+  /**
+   * Elegir una visita cuando la búsqueda dio varias: pide su PDF o, con
+   * `purpose: 'materials'`, responde sus materiales (`query`: el material
+   * preguntado, si lo hubo).
+   */
+  | {
+      readonly type: 'select_visit';
+      readonly visitId: string;
+      readonly label: string;
+      readonly purpose?: 'pdf' | 'materials';
+      readonly query?: string;
+    }
   /** Sugerencia: al tocarla se envía `message` como si el usuario lo escribiera. */
   | { readonly type: 'suggestion'; readonly label: string; readonly message: string };
 
@@ -67,9 +77,10 @@ export const DEFAULT_SUGGESTIONS: readonly AssistantAction[] = [
   suggestion('Visitas pendientes', '¿Qué visitas tengo pendientes?'),
   suggestion('Consumo de este mes', '¿Cuánto material se consumió este mes?'),
   suggestion('PDF de una visita', 'Quiero el PDF de una visita'),
+  suggestion('Materiales de la última visita', '¿Qué materiales usé en la última visita?'),
   suggestion('¿Cómo uso la app?', '¿Cómo uso la app?'),
 ];
 
 /** Primer mensaje que se muestra en el chat. */
 export const ASSISTANT_WELCOME =
-  'Hola, soy el asistente de TEINS. Pregúntame por existencias, qué comprar, consumo de materiales, tus visitas, el PDF de una visita o cómo usar la app.';
+  'Hola, soy el asistente de TEINS. Pregúntame por existencias, qué comprar, consumo de materiales, tus visitas, los materiales de una visita, el PDF de una visita o cómo usar la app.';

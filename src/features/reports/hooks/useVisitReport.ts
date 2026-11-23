@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Alert } from 'react-native';
 
 import { useRequiredUser } from '@/hooks/useCurrentUser';
+import { visitScopeFor } from '@/models/visit.model';
 import type { AppError } from '@/types/errors';
 import { unwrapResult as unwrap, userErrorMessage } from '@/utils/result.utils';
 
@@ -42,8 +43,9 @@ export function useVisitReport(visitId: string): VisitReportState {
     mutationFn: async () => {
       setStep('generating');
       const file = await unwrap(
-        generateVisitReportPdf(db, user.id, visitId, {
+        generateVisitReportPdf(db, visitScopeFor(user), visitId, {
           technicianName: user.fullName ?? (user.email || null),
+          currentUserId: user.id,
         }),
       );
       setStep('sharing');

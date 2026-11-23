@@ -3,7 +3,14 @@ import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppBar } from '@/components/layout/AppBar';
-import { ConnectivityBanner, ErrorMessage, Icon, IconButton, LoadingScreen } from '@/components/ui';
+import {
+  AppText,
+  ConnectivityBanner,
+  ErrorMessage,
+  Icon,
+  IconButton,
+  LoadingScreen,
+} from '@/components/ui';
 import { useSignOut } from '@/features/auth/hooks/useSignOut';
 import { InProgressSection } from '@/features/home/components/InProgressSection';
 import { QuickActions } from '@/features/home/components/QuickActions';
@@ -15,7 +22,8 @@ import { SyncIndicator } from '@/features/sync/components/SyncIndicator';
 import { useSyncIssueCount } from '@/features/sync/hooks/useSyncIssueCount';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
-import { canCreateVisit, firstName } from '@/models/user.model';
+import { canCreateVisit, canViewAllVisits, firstName } from '@/models/user.model';
+import { visitScopeFor } from '@/models/visit.model';
 import { useAuthStore } from '@/store/auth.store';
 import { colors, contentWidths, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
@@ -28,7 +36,9 @@ export default function HomeScreen() {
   const isOnline = useConnectivity();
   const isSubmitting = useAuthStore((state) => state.isSubmitting);
   const confirmSignOut = useSignOut();
-  const dashboard = useDashboard(user.id);
+  const dashboard = useDashboard(visitScopeFor(user));
+  // Admin y oficina: los conteos y "En progreso" son de todas las visitas.
+  const seesAll = canViewAllVisits(user.role);
   const rejectedCount = useSyncIssueCount();
 
   return (
@@ -80,8 +90,14 @@ export default function HomeScreen() {
             {dashboard.hasError ? <ErrorMessage message={DEFAULT_ERROR_MESSAGES.database} /> : null}
 
             <StatsRow stats={dashboard.stats} />
+            {seesAll ? (
+              <AppText variant="bodySmall" color={colors.textSecondary} testID="home-all-visits">
+                Visitas de todos los técnicos guardadas en este teléfono.
+              </AppText>
+            ) : null}
             <InProgressSection
               visits={dashboard.inProgress}
+              currentUserId={user.id}
               onOpenVisit={(visitId) =>
                 router.push({ pathname: '/visits/[visitId]', params: { visitId } })
               }

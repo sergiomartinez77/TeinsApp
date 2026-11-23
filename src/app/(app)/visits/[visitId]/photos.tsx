@@ -29,7 +29,7 @@ import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import { photoCountLabel, type VisitPhoto } from '@/models/photo.model';
-import { isEditable } from '@/models/visit.model';
+import { canEditVisit, readOnlyVisitMessage, visitScopeFor } from '@/models/visit.model';
 import { colors, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
@@ -53,7 +53,7 @@ export default function VisitPhotosScreen() {
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
-  const visitQuery = useVisit(user.id, visitId);
+  const visitQuery = useVisit(visitScopeFor(user), visitId);
   const list = useVisitPhotos(visitId);
   // La marca (fecha, ubicación y título de la visita) se dibuja con Skia sobre cada foto.
   const { capture, remove } = usePhotoActions(visitId, {
@@ -98,7 +98,8 @@ export default function VisitPhotosScreen() {
     );
   }
 
-  const readOnly = !isEditable(visit);
+  const readOnly = !canEditVisit(visit, user);
+  const readOnlyMessage = readOnlyVisitMessage(visit, user, READ_ONLY_MESSAGE) ?? READ_ONLY_MESSAGE;
 
   const horizontalPadding = spacing.screenHorizontal;
   const available = width - insets.left - insets.right - horizontalPadding * 2;
@@ -143,9 +144,7 @@ export default function VisitPhotosScreen() {
         )}
         columnWrapperStyle={columns > 1 ? styles.row : undefined}
         ListHeaderComponent={
-          readOnly ? (
-            <ReadOnlyNotice message={READ_ONLY_MESSAGE} style={styles.notice} />
-          ) : undefined
+          readOnly ? <ReadOnlyNotice message={readOnlyMessage} style={styles.notice} /> : undefined
         }
         ListEmptyComponent={
           <EmptyState

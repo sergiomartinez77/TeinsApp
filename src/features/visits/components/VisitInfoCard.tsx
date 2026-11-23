@@ -1,14 +1,21 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Card, Icon, type IconName } from '@/components/ui';
-import { visitTypeLabel, type Visit } from '@/models/visit.model';
+import { isOwnVisit, visitOwnerLabel, visitTypeLabel, type Visit } from '@/models/visit.model';
 import { colors, spacing } from '@/theme';
 import { formatDateTime } from '@/utils/date.utils';
 
 import { RecordSyncBadge, VisitStatusBadge } from './VisitStatusBadge';
 
+export interface VisitInfoCardProps {
+  visit: Visit;
+  /** Usuario conectado: si la visita es de otro técnico, se muestra quién. */
+  currentUserId?: string;
+}
+
 /** Tarjeta con la información general de la visita (detalle y resumen). */
-export function VisitInfoCard({ visit }: { visit: Visit }) {
+export function VisitInfoCard({ visit, currentUserId }: VisitInfoCardProps) {
+  const foreign = currentUserId !== undefined && !isOwnVisit(visit, currentUserId);
   return (
     <Card style={styles.card} testID="visit-info-card">
       <View style={styles.header}>
@@ -18,6 +25,11 @@ export function VisitInfoCard({ visit }: { visit: Visit }) {
         <VisitStatusBadge status={visit.status} />
       </View>
 
+      {foreign ? (
+        <AppText variant="labelLarge" color={colors.primary} testID="visit-owner">
+          {visitOwnerLabel(visit)}
+        </AppText>
+      ) : null}
       <Row icon="category" label="Tipo" value={visitTypeLabel(visit.visitType)} />
       {visit.clientName ? <Row icon="business" label="Cliente" value={visit.clientName} /> : null}
       {visit.address ? <Row icon="location-on" label="Dirección" value={visit.address} /> : null}

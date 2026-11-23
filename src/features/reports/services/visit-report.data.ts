@@ -4,7 +4,7 @@ import { VISIT_PHOTO_COUNT_SQL, VISIT_PHOTOS_SQL } from '@/features/photos/servi
 import { VISIT_RESPONSES_SQL } from '@/features/forms/services/response.service';
 import { buildTemplateCatalog, TEMPLATES_SQL } from '@/features/forms/services/template.service';
 import { buildVisitForms, type VisitFormItem } from '@/features/forms/services/visit-forms';
-import { buildVisitListQuery, VISIT_BY_ID_SQL } from '@/features/visits/services/visit.queries';
+import { buildVisitByIdQuery, buildVisitListQuery } from '@/features/visits/services/visit.queries';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { annotationFromRow, type VisitAnnotation } from '@/models/annotation.model';
 import { responseFromRow } from '@/models/form.model';
@@ -75,11 +75,20 @@ export interface VisitReportData {
 }
 
 export interface LoadVisitReportOptions {
-  technicianId: string;
+  /**
+   * Alcance: id del técnico (solo sus visitas) o `null` (cualquier visita del
+   * teléfono: admin y oficina, que las reciben todas). Ver `visitScopeFor`.
+   */
+  technicianId: string | null;
   visitId: string;
   photoReader: ReportPhotoReader;
-  /** Nombre a mostrar si el perfil del técnico no está en la base local. */
+  /**
+   * Nombre a mostrar si el perfil del técnico no está en la base local. Solo
+   * se usa si la visita es de `currentUserId` (el usuario que pide el PDF).
+   */
   fallbackTechnicianName?: string | null;
+  /** Usuario que pide el informe (por defecto, `technicianId`). */
+  currentUserId?: string;
   now?: Date;
 }
 
@@ -94,7 +103,8 @@ async function readPhoto(reader: ReportPhotoReader, photo: VisitPhoto): Promise<
 }
 
 /**
- * Reúne todo lo que va en el informe de una visita del técnico. Nunca lanza:
+ * Reúne todo lo que va en el informe de una visita (del técnico o, para admin
+ * y oficina, de cualquier técnico). Nunca lanza:
  * una visita ajena o inexistente da un error de validación y un fallo de la
  * base, un error `database`. Una foto que no se puede leer no impide el
  * informe: queda marcada para mostrar un aviso en su lugar.
@@ -105,13 +115,16 @@ export async function loadVisitReportData(
 ): Promise<Result<VisitReportData>> {
   const { technicianId, visitId } = options;
   try {
-    const visitRow = await db.getOptional<Row>(VISIT_BY_ID_SQL, [visitId, technicianId]);
+    const visitQuery = buildVisitByIdQuery(visitId, technicianId);
+    const visitRow = await db.getOptional<Row>(visitQuery.sql, visitQuery.parameters);
     if (!visitRow) return err(validationError(VISIT_MESSAGES.notFound, 'not_found'));
     const visit = visitFromRow(visitRow);
+    const requester = options.currentUserId ?? technicianId;
 
     const [profileRow, templateRows, responseRows, materialRows, photoRows, countRow, planRows] =
       await Promise.all([
-        db.getOptional<Row>(PROFILE_BY_ID_SQL, [technicianId]),
+        // El técnico de la visita (no quien pide el PDF).
+        db.getOptional<Row>(PROFILE_BY_ID_SQL, [visit.technicianId]),
         db.getAll<Row>(TEMPLATES_SQL),
         db.getAll<Row>(VISIT_RESPONSES_SQL, [visitId]),
         db.getAll<Row>(VISIT_MATERIALS_SQL, [visitId]),
@@ -121,8 +134,9 @@ export async function loadVisitReportData(
       ]);
 
     const profile = profileRow ? profileFromRow(profileRow) : null;
+    const fallback = visit.technicianId === requester ? options.fallbackTechnicianName : null;
     const technicianName =
-      profile?.fullName ?? options.fallbackTechnicianName ?? (profile?.email || null);
+      profile?.fullName ?? fallback ?? (profile?.email || visit.technicianName || null);
 
     const forms = buildVisitForms(
       responseRows.map(responseFromRow),
@@ -159,7 +173,8 @@ export async function loadVisitReportData(
 // ── Búsqueda de visitas (para el asistente) ──────────────────────────────────
 
 export interface FindVisitsForReportOptions {
-  technicianId: string;
+  /** Id del técnico (sus visitas) o `null` (todas las del teléfono: admin y oficina). */
+  technicianId: string | null;
   /** Texto libre: título, cliente, dirección o tipo de visita. */
   search?: string;
   /** Máximo de visitas (por defecto 10). */

@@ -79,8 +79,10 @@ export interface VisitReportFile {
 }
 
 export interface GenerateVisitReportOptions {
-  /** Nombre a mostrar si el perfil del técnico no está en la base local. */
+  /** Nombre a mostrar si el perfil del técnico no está en la base local (visita propia). */
   technicianName?: string | null;
+  /** Usuario que pide el informe (por defecto, `technicianId`). */
+  currentUserId?: string;
   /** Lector de fotos (por defecto, el del dispositivo). */
   photoReader?: ReportPhotoReader;
   now?: Date;
@@ -96,12 +98,14 @@ async function moveToReports(sourceUri: string, fileName: string): Promise<strin
 }
 
 /**
- * Genera el PDF de una visita del técnico, sin conexión. Nunca lanza: los
- * errores vuelven en el `Result` con un mensaje apto para el usuario.
+ * Genera el PDF de una visita, sin conexión. `technicianId`: alcance (el
+ * técnico solo sus visitas; `null` = admin u oficina, cualquier visita del
+ * teléfono). Nunca lanza: los errores vuelven en el `Result` con un mensaje
+ * apto para el usuario.
  */
 export async function generateVisitReportPdf(
   db: ReportDatabase,
-  technicianId: string,
+  technicianId: string | null,
   visitId: string,
   options: GenerateVisitReportOptions = {},
 ): Promise<Result<VisitReportFile>> {
@@ -110,6 +114,7 @@ export async function generateVisitReportPdf(
     visitId,
     photoReader: options.photoReader ?? deviceReportPhotoReader,
     fallbackTechnicianName: options.technicianName,
+    currentUserId: options.currentUserId,
     now: options.now,
   });
   if (!data.ok) return data;

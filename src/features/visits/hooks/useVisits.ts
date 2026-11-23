@@ -4,7 +4,11 @@ import { useCallback, useMemo, useState } from 'react';
 import { PAGE_SIZE } from '@/constants/app.constants';
 import { visitFromRow, type Visit } from '@/models/visit.model';
 
-import { buildVisitListQuery, VISIT_BY_ID_SQL, type VisitFilter } from '../services/visit.queries';
+import {
+  buildVisitByIdQuery,
+  buildVisitListQuery,
+  type VisitFilter,
+} from '../services/visit.queries';
 
 export interface VisitListResult {
   visits: Visit[];
@@ -18,26 +22,28 @@ export interface VisitListResult {
 }
 
 /**
- * Listado reactivo de visitas del técnico, con pestaña, búsqueda y paginación.
+ * Listado reactivo de visitas, con pestaña, búsqueda y paginación. `scope`:
+ * id del técnico (sus visitas) o `null` (todas: admin y oficina, ver
+ * `visitScopeFor`).
  *
  * La paginación amplía el límite de la consulta de página en página (20):
  * así la lista sigue siendo reactiva y se actualiza sola al cambiar los datos.
  */
 export function useVisits(
-  technicianId: string,
+  scope: string | null,
   filter: VisitFilter,
   search: string,
 ): VisitListResult {
-  const scope = `${filter}|${search}`;
-  const [paging, setPaging] = useState({ scope, pages: 1 });
+  const pageKey = `${scope ?? '*'}|${filter}|${search}`;
+  const [paging, setPaging] = useState({ key: pageKey, pages: 1 });
   // Al cambiar de pestaña o de búsqueda se vuelve a la primera página.
-  const pages = paging.scope === scope ? paging.pages : 1;
+  const pages = paging.key === pageKey ? paging.pages : 1;
   const pageLimit = pages * PAGE_SIZE.visits;
 
   // Se pide una fila de más para saber si quedan visitas por cargar.
   const query = useMemo(
-    () => buildVisitListQuery(technicianId, { filter, search, limit: pageLimit + 1 }),
-    [technicianId, filter, search, pageLimit],
+    () => buildVisitListQuery(scope, { filter, search, limit: pageLimit + 1 }),
+    [scope, filter, search, pageLimit],
   );
   const result = useQuery<Record<string, unknown>>(query.sql, query.parameters);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -49,8 +55,8 @@ export function useVisits(
   );
 
   const loadMore = useCallback(() => {
-    if (hasMore) setPaging({ scope, pages: pages + 1 });
-  }, [hasMore, scope, pages]);
+    if (hasMore) setPaging({ key: pageKey, pages: pages + 1 });
+  }, [hasMore, pageKey, pages]);
 
   const refreshQuery = result.refresh;
   const refresh = useCallback(() => {
@@ -77,9 +83,13 @@ export interface VisitResult {
   hasError: boolean;
 }
 
-/** Una visita del técnico, reactiva: se actualiza al cambiar de estado. */
-export function useVisit(technicianId: string, visitId: string): VisitResult {
-  const result = useQuery<Record<string, unknown>>(VISIT_BY_ID_SQL, [visitId, technicianId]);
+/**
+ * Una visita, reactiva: se actualiza al cambiar de estado. `scope`: id del
+ * técnico (solo si es suya) o `null` (cualquiera del teléfono: admin y oficina).
+ */
+export function useVisit(scope: string | null, visitId: string): VisitResult {
+  const query = useMemo(() => buildVisitByIdQuery(visitId, scope), [visitId, scope]);
+  const result = useQuery<Record<string, unknown>>(query.sql, query.parameters);
   const row = result.data[0];
   const visit = useMemo(() => (row ? visitFromRow(row) : null), [row]);
 

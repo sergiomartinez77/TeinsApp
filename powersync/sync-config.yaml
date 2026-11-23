@@ -33,6 +33,24 @@
 #       entrega como `material_id AS id`. Sus cantidades son NUMERIC → real.
 #       Solo la escriben triggers del servidor; la app nunca la sube.
 #     - material_stock_movements: compras y ajustes (todos). quantity → real.
+# • Administración y oficina (stream visitas_de_oficina): reciben TODAS las
+#   visitas, sus filas hijas y los perfiles (nombre del técnico de cada visita),
+#   igual que les permite leer la RLS (políticas *_select_all_admin_office). La
+#   condición `auth.user_id() IN (subconsulta sobre profiles)` no depende de la
+#   fila: el stream es un único bucket global que solo se entrega a quien tiene
+#   un perfil activo admin u oficina (mismo patrón que la "parameter query"
+#   sin columnas de salida de las Sync Rules, y que el test "IN operator with
+#   static left clause" del compilador de PowerSync). Si el rol o is_active
+#   cambian en la base, PowerSync lo reevalúa solo (profiles se replica).
+#     Docs: https://docs.powersync.com/sync/streams/queries (Using Subqueries)
+#           https://docs.powersync.com/sync/streams/ctes
+#           https://docs.powersync.com/sync/supported-sql (Operators: IN)
+#   Una visita propia del admin (y su propio perfil) aparece en dos streams:
+#   PowerSync guarda una sola fila por tabla e id, no se duplica. Por eso cada
+#   consulta usa EXACTAMENTE las mismas columnas que la del otro stream (los
+#   mismos datos llegan por los dos caminos).
+#   La consulta de visit_materials repite la misma lista de columnas (con el
+#   CAST de quantity) que detalle_de_mis_visitas: si cambia una, cambiar ambas.
 # ═══════════════════════════════════════════════════════════════════════════
 
 config:
@@ -63,6 +81,28 @@ streams:
         FROM visit_materials WHERE visit_id IN visitas_del_tecnico
       - SELECT * FROM photos WHERE visit_id IN visitas_del_tecnico
       - SELECT * FROM annotations WHERE visit_id IN visitas_del_tecnico
+
+  # Administración y oficina: todas las visitas, sus filas hijas y los
+  # perfiles (para mostrar el técnico de cada visita). Los técnicos no lo
+  # reciben (la condición sobre profiles no se cumple para ellos).
+  visitas_de_oficina:
+    auto_subscribe: true
+    with:
+      usuario_de_oficina: |
+        SELECT id FROM profiles
+        WHERE id = auth.user_id() AND is_active = true
+          AND (role = 'admin' OR role = 'office')
+    queries:
+      - SELECT * FROM visits WHERE auth.user_id() IN usuario_de_oficina
+      - SELECT * FROM form_responses WHERE auth.user_id() IN usuario_de_oficina
+      - |
+        SELECT id, visit_id, material_id, is_custom, material_code, material_name, unit,
+               CAST(quantity AS real) AS quantity, observations, sync_status,
+               created_at, updated_at
+        FROM visit_materials WHERE auth.user_id() IN usuario_de_oficina
+      - SELECT * FROM photos WHERE auth.user_id() IN usuario_de_oficina
+      - SELECT * FROM annotations WHERE auth.user_id() IN usuario_de_oficina
+      - SELECT * FROM profiles WHERE auth.user_id() IN usuario_de_oficina
 
   # Figuras guardadas por el técnico para reutilizarlas en otros planos.
   mis_figuras:

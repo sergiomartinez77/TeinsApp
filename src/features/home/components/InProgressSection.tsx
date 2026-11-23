@@ -1,7 +1,7 @@
 import { StyleSheet, View } from 'react-native';
 
 import { AppText, Button, Card, Icon } from '@/components/ui';
-import { visitTypeLabel, type Visit } from '@/models/visit.model';
+import { isOwnVisit, visitTypeLabel, type Visit } from '@/models/visit.model';
 import { colors, spacing } from '@/theme';
 import { formatRelative } from '@/utils/date.utils';
 
@@ -9,10 +9,21 @@ export interface InProgressSectionProps {
   visits: readonly Visit[];
   onOpenVisit: (visitId: string) => void;
   onSeeAll: () => void;
+  /** Usuario conectado: en las visitas de otros técnicos se muestra el técnico. */
+  currentUserId?: string;
 }
 
 /** Visitas en progreso con acceso directo (el dashboard muestra como máximo 3). */
-export function InProgressSection({ visits, onOpenVisit, onSeeAll }: InProgressSectionProps) {
+export function InProgressSection({
+  visits,
+  onOpenVisit,
+  onSeeAll,
+  currentUserId,
+}: InProgressSectionProps) {
+  const technicianOf = (visit: Visit) =>
+    currentUserId !== undefined && !isOwnVisit(visit, currentUserId)
+      ? `Técnico: ${visit.technicianName ?? 'otro técnico'}`
+      : null;
   return (
     <View style={styles.section}>
       <View style={styles.header}>
@@ -48,7 +59,9 @@ export function InProgressSection({ visits, onOpenVisit, onSeeAll }: InProgressS
                 {visit.title}
               </AppText>
               <AppText variant="bodySmall" numberOfLines={1}>
-                {[visit.clientName, visitTypeLabel(visit.visitType)].filter(Boolean).join(' · ')}
+                {[visit.clientName, visitTypeLabel(visit.visitType), technicianOf(visit)]
+                  .filter(Boolean)
+                  .join(' · ')}
               </AppText>
               {visit.startedAt ? (
                 <AppText variant="bodySmall" numberOfLines={1}>

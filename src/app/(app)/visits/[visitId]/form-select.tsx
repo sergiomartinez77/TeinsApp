@@ -25,7 +25,13 @@ import { useVisit } from '@/features/visits/hooks/useVisits';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
-import { isEditable } from '@/models/visit.model';
+import {
+  canEditVisit,
+  isOwnVisit,
+  readOnlyVisitMessage,
+  visitOwnerLabel,
+  visitScopeFor,
+} from '@/models/visit.model';
 import { colors, contentWidths, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
@@ -47,7 +53,7 @@ export default function FormSelectScreen() {
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
-  const visitQuery = useVisit(user.id, visitId);
+  const visitQuery = useVisit(visitScopeFor(user), visitId);
   const responsesQuery = useVisitFormResponses(visitId);
   const templatesQuery = useFormTemplates();
   const { visit } = visitQuery;
@@ -86,7 +92,9 @@ export default function FormSelectScreen() {
     );
   }
 
-  const editable = isEditable(visit);
+  const editable = canEditVisit(visit, user);
+  const own = isOwnVisit(visit, user.id);
+  const lockedTitle = own ? 'La visita está cerrada' : visitOwnerLabel(visit);
   const listStyle = [
     styles.list,
     {
@@ -101,8 +109,8 @@ export default function FormSelectScreen() {
       return screen(
         <EmptyState
           icon="lock"
-          message="La visita está cerrada"
-          hint="Ya no se pueden agregar formularios."
+          message={lockedTitle}
+          hint={own ? 'Ya no se pueden agregar formularios.' : 'Solo su técnico puede agregarlos.'}
         />,
       );
     }
@@ -149,7 +157,7 @@ export default function FormSelectScreen() {
     return screen(
       <EmptyState
         icon="lock"
-        message="La visita está cerrada"
+        message={lockedTitle}
         hint="No se registró un formulario técnico para esta visita."
       />,
     );
@@ -178,9 +186,11 @@ export default function FormSelectScreen() {
       ListHeaderComponent={
         forms.length > 0 ? (
           <AppText variant="bodyMedium" color={colors.textSecondary}>
-            {editable
-              ? 'Toca un formulario para seguir donde lo dejaste.'
-              : 'La visita está cerrada: los formularios son de solo lectura.'}
+            {readOnlyVisitMessage(
+              visit,
+              user,
+              'La visita está cerrada: los formularios son de solo lectura.',
+            ) ?? 'Toca un formulario para seguir donde lo dejaste.'}
           </AppText>
         ) : undefined
       }

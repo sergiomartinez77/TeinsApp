@@ -270,9 +270,9 @@ describe('consultas del listado', () => {
   it('filtra siempre por técnico y ordena por fecha de creación', () => {
     const query = buildVisitListQuery('tech-1', { filter: 'all', search: '', limit: 21 });
 
-    expect(query.sql).toBe(
-      'SELECT * FROM visits WHERE technician_id = ? ORDER BY created_at DESC LIMIT ?',
-    );
+    expect(query.sql).toMatch(/^SELECT visits\.\*, \(SELECT coalesce\(/);
+    expect(query.sql).toMatch(/AS technician_name FROM visits/);
+    expect(query.sql).toMatch(/WHERE technician_id = \? ORDER BY created_at DESC LIMIT \?$/);
     expect(query.parameters).toEqual(['tech-1', 21]);
     expect(VISIT_BY_ID_SQL).toMatch(/id = \? AND technician_id = \?/);
   });

@@ -9,6 +9,8 @@ export const STOCK_LABELS = {
   low: 'Bajo mínimo',
   pending: 'Pendiente de sincronizar',
   noData: 'Sin datos de bodega todavía',
+  noInitialCount: 'Falta conteo inicial',
+  negative: 'Stock negativo: revisa el conteo',
 } as const;
 
 export interface StockListTileProps {
@@ -16,9 +18,22 @@ export interface StockListTileProps {
   onPress: (item: MaterialStockItem) => void;
 }
 
-/** Texto de las existencias: lo que dice el servidor, o que aún no llegó. */
+/**
+ * Texto de las existencias: lo que dice el servidor, que aún no llegó o, si
+ * nunca hubo compras ni ajustes, que falta el conteo inicial (no se muestra
+ * un "−63 metro" que solo es el uso en visitas).
+ */
 export function onHandLabel(item: MaterialStockItem): string {
-  return item.stock ? formatQuantityWithUnit(item.stock.onHand, item.unit) : STOCK_LABELS.noData;
+  if (!item.stock) return STOCK_LABELS.noData;
+  if (item.needsInitialCount) return STOCK_LABELS.noInitialCount;
+  return formatQuantityWithUnit(item.stock.onHand, item.unit);
+}
+
+/** "Usado en visitas: 63 metro" (lo calcula el servidor con todas las visitas). */
+export function usedInVisitsLabel(item: MaterialStockItem): string | null {
+  return item.stock
+    ? `Usado en visitas: ${formatQuantityWithUnit(item.stock.used, item.unit)}`
+    : null;
 }
 
 /**
@@ -29,7 +44,9 @@ export function StockListTile({ item, onPress }: StockListTileProps) {
   const onHand = onHandLabel(item);
   const minimum =
     item.minStock === null ? null : `Mínimo ${formatQuantityWithUnit(item.minStock, item.unit)}`;
-  const negative = item.stock !== null && item.stock.onHand < 0;
+  const used = item.needsInitialCount ? usedInVisitsLabel(item) : null;
+  const known = item.stock !== null && !item.needsInitialCount;
+  const showBadges = item.isLow || item.isNegative || item.hasPending;
 
   return (
     <Card
@@ -40,7 +57,9 @@ export function StockListTile({ item, onPress }: StockListTileProps) {
         `código ${item.code}`,
         `en bodega ${onHand}`,
         minimum,
+        used,
         item.isLow ? STOCK_LABELS.low : null,
+        item.isNegative ? STOCK_LABELS.negative : null,
         item.hasPending ? STOCK_LABELS.pending : null,
       ]
         .filter(Boolean)
@@ -52,10 +71,14 @@ export function StockListTile({ item, onPress }: StockListTileProps) {
           <AppText variant="labelMedium">{item.code}</AppText>
           <AppText variant="titleMedium">{item.name}</AppText>
           {minimum ? <AppText variant="bodySmall">{minimum}</AppText> : null}
-          {item.isLow || item.hasPending ? (
+          {used ? <AppText variant="bodySmall">{used}</AppText> : null}
+          {showBadges ? (
             <View style={styles.badges}>
               {item.isLow ? (
                 <Badge label={STOCK_LABELS.low} color={colors.error} icon="warning" />
+              ) : null}
+              {item.isNegative ? (
+                <Badge label={STOCK_LABELS.negative} color={colors.error} icon="error-outline" />
               ) : null}
               {item.hasPending ? (
                 <Badge label={STOCK_LABELS.pending} color={colors.syncing} icon="sync" />
@@ -64,8 +87,16 @@ export function StockListTile({ item, onPress }: StockListTileProps) {
           ) : null}
         </View>
         <AppText
-          variant={item.stock ? 'titleMedium' : 'bodySmall'}
-          color={item.stock ? (negative || item.isLow ? colors.error : colors.primary) : undefined}
+          variant={known ? 'titleMedium' : 'bodySmall'}
+          color={
+            item.needsInitialCount
+              ? colors.warning
+              : known
+                ? item.isNegative || item.isLow
+                  ? colors.error
+                  : colors.primary
+                : undefined
+          }
           style={styles.quantity}
         >
           {onHand}

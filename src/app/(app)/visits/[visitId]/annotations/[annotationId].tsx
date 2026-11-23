@@ -38,7 +38,12 @@ import {
   type AnnotationFigure,
   type VisitAnnotation,
 } from '@/models/annotation.model';
-import { isEditable, type Visit } from '@/models/visit.model';
+import {
+  canEditVisit,
+  readOnlyVisitMessage,
+  visitScopeFor,
+  type Visit,
+} from '@/models/visit.model';
 import { colors, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
@@ -53,7 +58,7 @@ export default function PlanEditorScreen() {
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
-  const visitQuery = useVisit(user.id, visitId);
+  const visitQuery = useVisit(visitScopeFor(user), visitId);
   const planQuery = useAnnotation(annotationId);
   const plansQuery = useVisitAnnotations(visitId);
 
@@ -107,7 +112,10 @@ function PlanEditor({ visit, technicianId, plan, title, isOnline }: PlanEditorPr
   const db = usePowerSync();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
-  const readOnly = !isEditable(visit);
+  // Visita cerrada o de otro técnico (admin/oficina la consultan): solo lectura.
+  const readOnly = !canEditVisit(visit, { id: technicianId });
+  const readOnlyMessage =
+    readOnlyVisitMessage(visit, { id: technicianId }, READ_ONLY_MESSAGE) ?? READ_ONLY_MESSAGE;
   const canvasRef = useRef<PlanCanvasHandle>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [namingFigure, setNamingFigure] = useState(false);
@@ -192,7 +200,7 @@ function PlanEditor({ visit, technicianId, plan, title, isOnline }: PlanEditorPr
 
       {readOnly ? (
         <ReadOnlyNotice
-          message={READ_ONLY_MESSAGE}
+          message={readOnlyMessage}
           variant="bar"
           // En horizontal el aviso no queda bajo la muesca ni los bordes redondeados.
           style={{

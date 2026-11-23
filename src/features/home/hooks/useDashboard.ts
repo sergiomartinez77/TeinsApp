@@ -2,8 +2,8 @@ import { useQuery } from '@powersync/react';
 import { useCallback, useMemo, useState } from 'react';
 
 import {
-  IN_PROGRESS_VISITS_SQL,
-  VISIT_STATS_SQL,
+  buildInProgressQuery,
+  buildVisitStatsQuery,
   visitStatsFromRow,
   type VisitStats,
   type VisitStatsRow,
@@ -26,18 +26,24 @@ export interface DashboardData {
 
 /**
  * Datos del dashboard. Son consultas reactivas sobre SQLite: la pantalla se
- * actualiza sola cuando cambian las visitas, sin sondeos.
+ * actualiza sola cuando cambian las visitas, sin sondeos. `scope`: id del
+ * técnico (sus visitas) o `null` (todas las del teléfono: admin y oficina).
  */
-export function useDashboard(technicianId: string): DashboardData {
-  const statsQuery = useQuery<VisitStatsRow>(VISIT_STATS_SQL, [technicianId]);
-  const inProgressQuery = useQuery<Record<string, unknown>>(IN_PROGRESS_VISITS_SQL, [
-    technicianId,
-    DASHBOARD_IN_PROGRESS_LIMIT,
-  ]);
+export function useDashboard(scope: string | null): DashboardData {
+  const stats = useMemo(() => buildVisitStatsQuery(scope), [scope]);
+  const inProgress = useMemo(
+    () => buildInProgressQuery(scope, DASHBOARD_IN_PROGRESS_LIMIT),
+    [scope],
+  );
+  const statsQuery = useQuery<VisitStatsRow>(stats.sql, stats.parameters);
+  const inProgressQuery = useQuery<Record<string, unknown>>(inProgress.sql, inProgress.parameters);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const stats = useMemo(() => visitStatsFromRow(statsQuery.data[0]), [statsQuery.data]);
-  const inProgress = useMemo(() => inProgressQuery.data.map(visitFromRow), [inProgressQuery.data]);
+  const statsValue = useMemo(() => visitStatsFromRow(statsQuery.data[0]), [statsQuery.data]);
+  const inProgressVisits = useMemo(
+    () => inProgressQuery.data.map(visitFromRow),
+    [inProgressQuery.data],
+  );
 
   const refreshStats = statsQuery.refresh;
   const refreshInProgress = inProgressQuery.refresh;
@@ -49,8 +55,8 @@ export function useDashboard(technicianId: string): DashboardData {
   }, [refreshStats, refreshInProgress]);
 
   return {
-    stats,
-    inProgress,
+    stats: statsValue,
+    inProgress: inProgressVisits,
     isLoading: statsQuery.isLoading || inProgressQuery.isLoading,
     hasError: Boolean(statsQuery.error ?? inProgressQuery.error),
     isRefreshing,

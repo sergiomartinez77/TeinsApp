@@ -492,8 +492,9 @@ desplegada y los secretos de docs/BACKEND.md §11.
         visitas (nada inventado).
 13. [ ] Oficina o administración: «visitas pendientes de todos los técnicos». **Esperado**:
         incluye visitas de otros técnicos con su nombre. Un técnico solo ve las suyas.
-14. [ ] Oficina: «PDF de una visita de otro técnico». **Esperado**: explica que el PDF se
-        genera en el teléfono del técnico; no aparece la tarjeta.
+14. [ ] Oficina: «PDF de una visita de otro técnico». **Esperado**: aparece la tarjeta
+        «Compartir PDF» (oficina y administración tienen todas las visitas en el teléfono).
+        Un técnico que lo pida para una visita ajena recibe la explicación, sin tarjeta.
 15. [ ] Pregunta ajena a TEINS («escribe un poema»). **Esperado**: responde que solo ayuda
         con la app.
 16. [ ] Clave no válida o sin saldo en Anthropic. **Esperado**: aviso «El asistente con IA no
@@ -501,6 +502,40 @@ desplegada y los secretos de docs/BACKEND.md §11.
 17. [ ] Cambia `ASSISTANT_MODEL` a `claude-opus-5-5` sin reinstalar la app. **Esperado**: la
         siguiente pregunta la responde Opus (en los logs de la función).
 18. [ ] Cierra sesión y vuelve a entrar. **Esperado**: la conversación anterior ya no está.
+19. [ ] «¿Cuánto cable usé en la visita de <cliente>?», «materiales de la última visita» y
+        «¿En qué visitas se usó cable?» (con y sin conexión). **Esperado**: cantidades por
+        visita iguales a las de la pantalla Materiales; ningún material «sin conteo inicial»
+        aparece con un número negativo como existencia.
+
+---
+
+## 26. Falta conteo inicial y uso por visita — P1 (requiere backend)
+
+1. [ ] Material del catálogo usado en visitas pero sin compras ni ajustes. **Esperado**: en
+       Inventario dice «Falta conteo inicial» (no «-63 metro») y «Usado en visitas: 63
+       metro». No está en «Qué comprar»: aparece en el grupo «Sin conteo inicial».
+2. [ ] Como oficina, abre ese material. **Esperado**: «Registra un ajuste con lo que hay en
+       bodega.»; como técnico, el aviso de que oficina debe registrar el conteo.
+3. [ ] Oficina registra un ajuste (p. ej. +80) y sincroniza. **Esperado**: ya muestra el
+       número (80 − usado). Si queda negativo: «Stock negativo: revisa el conteo».
+4. [ ] En el detalle, toca «Uso por visita». **Esperado**: total arriba y una fila por
+       visita (cliente/título, fecha, estado y cantidad), la más reciente primero; tocar una
+       fila abre la visita.
+
+## 27. Administración y oficina ven todas las visitas — P1 (requiere backend)
+
+Antes: redesplegar `powersync/sync-config.yaml` (docs/BACKEND.md, 2.5).
+
+1. [ ] Entra como oficina. **Esperado**: el inicio dice «Visitas de todos los técnicos…» y
+       cuenta todas; la lista se llama «Visitas» y cada visita ajena dice «Técnico: <nombre>».
+2. [ ] Abre una visita de otro técnico. **Esperado**: «Visita de <técnico>: puedes
+       consultarla, pero solo su técnico puede editarla.»; sin «Iniciar/Finalizar visita»;
+       formularios, materiales, fotos y planos en solo lectura; «Compartir PDF» funciona.
+3. [ ] Como técnico. **Esperado**: igual que antes, solo sus visitas.
+4. [ ] Cambia el rol de un usuario de oficina a técnico en Supabase y sincroniza.
+       **Esperado**: las visitas ajenas desaparecen del teléfono.
+5. [ ] Asistente (sin conexión) como oficina: «materiales de la visita de <cliente de otro
+       técnico>». **Esperado**: lista sus materiales.
 
 ---
 

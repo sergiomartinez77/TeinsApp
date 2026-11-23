@@ -37,7 +37,12 @@ import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
 import type { FormResponse, FormTemplate } from '@/models/form.model';
-import { isEditable, type Visit } from '@/models/visit.model';
+import {
+  canEditVisit,
+  readOnlyVisitMessage,
+  visitScopeFor,
+  type Visit,
+} from '@/models/visit.model';
 import { colors, contentWidths, radius, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 import { formatDateTime } from '@/utils/date.utils';
@@ -59,7 +64,7 @@ export default function VisitFormScreen() {
   const user = useRequiredUser();
   const isOnline = useConnectivity();
 
-  const visitQuery = useVisit(user.id, visitId);
+  const visitQuery = useVisit(visitScopeFor(user), visitId);
   const responseQuery = useFormResponseFor(visitId, { templateId, responseId });
   const templatesQuery = useFormTemplates();
 
@@ -117,13 +122,21 @@ interface FormEditorProps {
 function FormEditor({ visit, template, response, isOnline }: FormEditorProps) {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef<ScrollViewInstance>(null);
+  const user = useRequiredUser();
 
   const isComplete = response?.isComplete ?? false;
-  const readOnly = isComplete || !isEditable(visit);
+  // Visita cerrada o de otro técnico (admin/oficina la consultan): solo lectura.
+  const readOnly = isComplete || !canEditVisit(visit, user);
+  const readOnlyMessage =
+    readOnlyVisitMessage(
+      visit,
+      user,
+      'La visita está cerrada: el formulario es de solo lectura.',
+    ) ?? 'La visita está cerrada: el formulario es de solo lectura.';
 
   const editor = useFormEditor({
     visitId: visit.id,
-    technicianId: visit.technicianId,
+    technicianId: user.id,
     template,
     responseId: response?.id,
     initialValues: response?.values ?? {},
@@ -195,7 +208,7 @@ function FormEditor({ visit, template, response, isOnline }: FormEditorProps) {
                 detail={response?.completedAt ? formatDateTime(response.completedAt) : undefined}
               />
             ) : readOnly ? (
-              <ReadOnlyNotice message="La visita está cerrada: el formulario es de solo lectura." />
+              <ReadOnlyNotice message={readOnlyMessage} />
             ) : null}
 
             {sections.length > 1 ? (

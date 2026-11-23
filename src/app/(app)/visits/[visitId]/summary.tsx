@@ -12,7 +12,7 @@ import type { SummarySection } from '@/features/visits/services/visit-summary';
 import { VISIT_MESSAGES } from '@/features/visits/services/visit.service';
 import { useConnectivity } from '@/hooks/useConnectivity';
 import { useRequiredUser } from '@/hooks/useCurrentUser';
-import { isEditable, type Visit } from '@/models/visit.model';
+import { readOnlyVisitMessage, visitScopeFor, type Visit } from '@/models/visit.model';
 import { colors, contentWidths, isSplitViewWidth, spacing } from '@/theme';
 import { DEFAULT_ERROR_MESSAGES } from '@/types/errors';
 
@@ -23,7 +23,7 @@ export default function VisitSummaryScreen() {
   const { visitId } = useLocalSearchParams<{ visitId: string }>();
   const user = useRequiredUser();
   const isOnline = useConnectivity();
-  const { visit, isLoading, hasError } = useVisit(user.id, visitId);
+  const { visit, isLoading, hasError } = useVisit(visitScopeFor(user), visitId);
 
   const bar = <AppBar title="Resumen" bottom={<ConnectivityBanner isOnline={isOnline} />} />;
 
@@ -50,17 +50,18 @@ export default function VisitSummaryScreen() {
   return (
     <View style={styles.screen}>
       {bar}
-      <SummaryContent technicianId={user.id} visit={visit} />
+      <SummaryContent userId={user.id} visit={visit} />
     </View>
   );
 }
 
 /** Contenido del resumen; separado para consultar las secciones solo con la visita cargada. */
-function SummaryContent({ technicianId, visit }: { technicianId: string; visit: Visit }) {
+function SummaryContent({ userId, visit }: { userId: string; visit: Visit }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const statuses = useVisitSummary(technicianId, visit);
+  const statuses = useVisitSummary(visit);
+  const readOnlyMessage = readOnlyVisitMessage(visit, { id: userId }, READ_ONLY_MESSAGE);
   const split = isSplitViewWidth(width);
 
   const openSection = (section: SummarySection) =>
@@ -68,8 +69,8 @@ function SummaryContent({ technicianId, visit }: { technicianId: string; visit: 
 
   const info = (
     <View style={styles.column}>
-      {isEditable(visit) ? null : <ReadOnlyNotice message={READ_ONLY_MESSAGE} />}
-      <VisitInfoCard visit={visit} />
+      {readOnlyMessage ? <ReadOnlyNotice message={readOnlyMessage} /> : null}
+      <VisitInfoCard visit={visit} currentUserId={userId} />
     </View>
   );
   const links = <SectionLinks statuses={statuses} onOpen={openSection} />;

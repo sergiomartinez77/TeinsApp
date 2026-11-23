@@ -12,9 +12,16 @@ import { containsAnyCondition, type SqlQuery } from '@/utils/sql.utils';
 /** Estados locales "aún sin subir", como lista SQL. */
 const PENDING_STATES_SQL = "('local', 'pendingSync', 'syncing')";
 
-/** Bajo mínimo: existencias conocidas y menores que el mínimo. */
-const IS_LOW_SQL =
-  's.material_id IS NOT NULL AND c.min_stock IS NOT NULL AND s.on_hand < c.min_stock';
+/**
+ * Sin conteo inicial: el servidor tiene existencias pero nunca hubo compras ni
+ * ajustes (ver `needsInitialCount` en el modelo). Su "en bodega" es solo el
+ * uso en visitas en negativo: no se trata como existencia real.
+ */
+const NEEDS_INITIAL_COUNT_SQL =
+  's.material_id IS NOT NULL AND coalesce(s.purchased, 0) = 0 AND coalesce(s.adjusted, 0) = 0';
+
+/** Bajo mínimo: existencias conocidas, con conteo inicial, y menores que el mínimo. */
+const IS_LOW_SQL = `s.material_id IS NOT NULL AND c.min_stock IS NOT NULL AND s.on_hand < c.min_stock AND NOT (${NEEDS_INITIAL_COUNT_SQL})`;
 
 const STOCK_SELECT = `
 SELECT c.id AS material_id, c.code, c.name, c.unit, c.category, c.min_stock,
@@ -32,6 +39,8 @@ export interface StockQueryOptions {
   search?: string;
   /** Solo los materiales bajo mínimo. */
   onlyLow?: boolean;
+  /** Solo los materiales sin conteo inicial (nunca tuvieron compras ni ajustes). */
+  onlyWithoutInitialCount?: boolean;
   /** Un solo material. */
   materialId?: string;
   /** Máximo de filas. */
@@ -53,6 +62,7 @@ export function buildStockQuery(options: StockQueryOptions = {}): SqlQuery {
     parameters.push(...text.parameters);
   }
   if (options.onlyLow) conditions.push(`(${IS_LOW_SQL})`);
+  if (options.onlyWithoutInitialCount) conditions.push(`(${NEEDS_INITIAL_COUNT_SQL})`);
   if (options.materialId) {
     conditions.push('c.id = ?');
     parameters.push(options.materialId);
@@ -102,8 +112,8 @@ export const UPDATE_MIN_STOCK_SQL =
  * por la app pueden diferir en el formato (espacio o "T" entre fecha y hora).
  *
  * Solo ve las visitas sincronizadas en este dispositivo: el técnico, las
- * suyas; admin y oficina, también solo las asignadas a ellos (el stream
- * `mis_visitas` filtra por technician_id). Ver docs/BACKEND.md.
+ * suyas (stream `mis_visitas`); admin y oficina, todas (stream
+ * `visitas_de_oficina`). Ver docs/BACKEND.md.
  */
 export const CONSUMPTION_SQL = `
 SELECT vm.material_id AS material_id,
@@ -121,3 +131,33 @@ WHERE coalesce(vm.is_custom, 0) = 0
   AND julianday(coalesce(v.completed_at, v.created_at)) <= julianday(?)
 GROUP BY vm.material_id
 ORDER BY quantity DESC, name COLLATE NOCASE ASC`;
+
+/** Fecha de una visita para el inventario: finalización o, si no terminó, creación. */
+const VISIT_DATE_SQL = 'coalesce(v.completed_at, v.created_at)';
+
+/**
+ * Uso de un material del catálogo por visita: UNA fila por visita (si en la
+ * misma visita se agregó en varias líneas, se suma dentro de esa visita),
+ * de la más reciente a la más antigua. Los personalizados no son de bodega.
+ * Parámetros: material, límite.
+ */
+export const MATERIAL_USAGE_BY_VISIT_SQL = `
+SELECT vm.visit_id AS visit_id, v.title, v.client_name, v.status, v.technician_id,
+       ${VISIT_DATE_SQL} AS visit_date,
+       (SELECT coalesce(p.full_name, p.email) FROM profiles p
+         WHERE p.id = v.technician_id) AS technician_name,
+       sum(vm.quantity) AS quantity,
+       coalesce((SELECT c.unit FROM material_catalog c WHERE c.id = vm.material_id), max(vm.unit)) AS unit
+FROM visit_materials vm
+JOIN visits v ON v.id = vm.visit_id
+WHERE vm.material_id = ? AND coalesce(vm.is_custom, 0) = 0
+GROUP BY vm.visit_id
+ORDER BY julianday(${VISIT_DATE_SQL}) DESC, v.created_at DESC, vm.visit_id ASC
+LIMIT ?`;
+
+/** Total de un material en todas las visitas del teléfono. Parámetro: material. */
+export const MATERIAL_USAGE_TOTAL_SQL = `
+SELECT coalesce(sum(vm.quantity), 0) AS total, count(DISTINCT vm.visit_id) AS visit_count
+FROM visit_materials vm
+JOIN visits v ON v.id = vm.visit_id
+WHERE vm.material_id = ? AND coalesce(vm.is_custom, 0) = 0`;

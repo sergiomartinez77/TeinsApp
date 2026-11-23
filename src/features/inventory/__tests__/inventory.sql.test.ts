@@ -392,7 +392,12 @@ describe('setMinStock', () => {
       data: undefined,
     });
     expect(minStockOf('m-brida')).toBe(12.5);
-    expect((await getMaterialStock(db, 'm-brida'))?.isLow).toBe(true);
+    // La brida nunca tuvo compras ni ajustes: falta su conteo inicial y, aunque
+    // su "en bodega" (−3) es menor que el mínimo, no se marca bajo mínimo.
+    expect(await getMaterialStock(db, 'm-brida')).toMatchObject({
+      needsInitialCount: true,
+      isLow: false,
+    });
 
     await setMinStock(db, ADMIN, { materialId: 'm-brida', minStock: null });
     expect(minStockOf('m-brida')).toBeNull();
