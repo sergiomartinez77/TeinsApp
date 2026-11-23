@@ -22,7 +22,7 @@ import {
   isSafeImageDataUri,
   planSvg,
   REPORT_TEXTS,
-} from '../services/visit-report.html';
+} from '../services/visit-report-html';
 
 /** HTML del informe: contenido, formato por tipo de campo y escapado (XSS). */
 

@@ -11,7 +11,7 @@ import {
   type ReportDatabase,
   type ReportPhotoReader,
 } from './visit-report.data';
-import { buildVisitReportHtml } from './visit-report.html';
+import { buildVisitReportHtml } from './visit-report-html';
 import { deviceReportPhotoReader } from './visit-report.images';
 
 /**
